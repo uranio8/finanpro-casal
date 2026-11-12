@@ -117,10 +117,10 @@ export default function App() {
             ...INITIAL_STATE.categoryBudgets,
             ...(parsed.categoryBudgets || {})
           },
-          extraIncomes:
-            Array.isArray(parsed.extraIncomes) && parsed.extraIncomes.length > 0
-              ? parsed.extraIncomes
-              : INITIAL_STATE.extraIncomes
+          extraIncomes: Array.isArray(parsed.extraIncomes)
+            ? parsed.extraIncomes
+            : INITIAL_STATE.extraIncomes,
+          weeklyExtraFuelCosts: parsed.weeklyExtraFuelCosts || {}
         };
 
         return {
@@ -810,6 +810,28 @@ export default function App() {
       };
     });
     showToast('Registro de renda extra removido.');
+  };
+
+  const handleUpdateWeeklyExtraFuel = (ym, weekLabel, fuelAmount) => {
+    const cleanVal = Math.max(0, Number(fuelAmount) || 0);
+    setState((prev) => {
+      const targetYm = ym || prev.selectedMonth;
+      const nextWeeklyFuel = {
+        ...(prev.weeklyExtraFuelCosts || {}),
+        [targetYm]: {
+          ...((prev.weeklyExtraFuelCosts || {})[targetYm] || {}),
+          [weekLabel]: cleanVal
+        }
+      };
+      const nextState = {
+        ...prev,
+        weeklyExtraFuelCosts: nextWeeklyFuel
+      };
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, targetYm)
+      };
+    });
   };
 
   const handleAddCommitment = (newCommData) => {
@@ -1561,6 +1583,7 @@ export default function App() {
           monthlyIncomes: {},
           monthlySettlements: {},
           extraIncomes: [],
+          weeklyExtraFuelCosts: {},
           transactions: [],
           commitments: [],
           cards: [],
@@ -1766,6 +1789,7 @@ export default function App() {
             onUpdateExtraIncome={handleUpdateExtraIncome}
             onToggleExtraIncomeStatus={handleToggleExtraIncomeStatus}
             onDeleteExtraIncome={handleDeleteExtraIncome}
+            onUpdateWeeklyExtraFuel={handleUpdateWeeklyExtraFuel}
           />
         )}
 

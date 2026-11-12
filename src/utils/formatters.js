@@ -122,6 +122,115 @@ export function getEffectiveMonthIncome(state, yearMonth) {
   };
 }
 
+export function getMonthlyExtraNetSummary(state, ym, ownerFilter = 'all') {
+  const monthExtras = (state.extraIncomes || []).filter((i) => {
+    if (!i.date || !i.date.startsWith(ym)) return false;
+    if (ownerFilter === 'partner1' && i.owner !== 'partner1') return false;
+    if (ownerFilter === 'partner2' && i.owner !== 'partner2') return false;
+    if (ownerFilter === 'joint') return false;
+    return true;
+  });
+
+  const weekFuelMap = state.weeklyExtraFuelCosts?.[ym] || {};
+  const weeks = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4', 'Semana 5'];
+
+  let totalWeeklyFuel = 0;
+  let p1WeeklyFuel = 0;
+  let p2WeeklyFuel = 0;
+  let p1ReceivedFuel = 0;
+  let p2ReceivedFuel = 0;
+
+  const byWeek = {};
+  weeks.forEach((weekLabel) => {
+    const rawFuel = Math.max(0, Number(weekFuelMap[weekLabel] || 0));
+    const weekItems = monthExtras.filter((i) => i.weekOfMonth === weekLabel);
+    const weekGross = weekItems.reduce((a, i) => a + Number(i.amount || 0), 0);
+    const weekReceivedGross = weekItems
+      .filter((i) => i.status === 'received')
+      .reduce((a, i) => a + Number(i.amount || 0), 0);
+
+    const hasP1 = weekItems.some((i) => i.owner === 'partner1');
+    const hasP2 = weekItems.some((i) => i.owner === 'partner2');
+    let appliedFuel = rawFuel;
+    if (ownerFilter === 'partner2' && hasP1 && !hasP2) appliedFuel = 0;
+    if (ownerFilter === 'partner1' && hasP2 && !hasP1) appliedFuel = 0;
+    if (ownerFilter === 'joint') appliedFuel = 0;
+
+    totalWeeklyFuel += appliedFuel;
+
+    const targetOwner = !hasP1 && hasP2 ? 'partner2' : 'partner1';
+    if (targetOwner === 'partner1') {
+      p1WeeklyFuel += appliedFuel;
+      p1ReceivedFuel += Math.min(appliedFuel, weekReceivedGross);
+    } else {
+      p2WeeklyFuel += appliedFuel;
+      p2ReceivedFuel += Math.min(appliedFuel, weekReceivedGross);
+    }
+
+    const weekNet = Math.max(0, Number((weekGross - appliedFuel).toFixed(2)));
+    const weekReceivedNet = Math.max(0, Number((weekReceivedGross - appliedFuel).toFixed(2)));
+    const weekPendingNet = Math.max(0, Number((weekNet - weekReceivedNet).toFixed(2)));
+
+    byWeek[weekLabel] = {
+      weekLabel,
+      count: weekItems.length,
+      gross: Number(weekGross.toFixed(2)),
+      weeklyFuel: Number(appliedFuel.toFixed(2)),
+      net: weekNet,
+      receivedGross: Number(weekReceivedGross.toFixed(2)),
+      receivedNet: weekReceivedNet,
+      pendingNet: weekPendingNet,
+      classesCount: weekItems
+        .filter((i) => i.type === 'class')
+        .reduce((a, i) => a + Number(i.hoursOrQty || 0), 0),
+      targetOwner
+    };
+  });
+
+  const sumBy = (pred) =>
+    monthExtras.filter(pred).reduce((a, i) => a + Number(i.amount || 0), 0);
+
+  const p1Gross = sumBy((i) => i.owner === 'partner1');
+  const p2Gross = sumBy((i) => i.owner === 'partner2');
+  const p1ReceivedGross = sumBy((i) => i.owner === 'partner1' && i.status === 'received');
+  const p2ReceivedGross = sumBy((i) => i.owner === 'partner2' && i.status === 'received');
+  const p1TitheableGross = sumBy(
+    (i) => i.owner === 'partner1' && i.status === 'received' && i.applyTitheAndOffering !== false
+  );
+  const p2TitheableGross = sumBy(
+    (i) => i.owner === 'partner2' && i.status === 'received' && i.applyTitheAndOffering !== false
+  );
+
+  const p1Net = Math.max(0, Number((p1Gross - p1WeeklyFuel).toFixed(2)));
+  const p2Net = Math.max(0, Number((p2Gross - p2WeeklyFuel).toFixed(2)));
+  const p1ReceivedNet = Math.max(0, Number((p1ReceivedGross - p1ReceivedFuel).toFixed(2)));
+  const p2ReceivedNet = Math.max(0, Number((p2ReceivedGross - p2ReceivedFuel).toFixed(2)));
+  const p1TitheableNet = Math.max(0, Number((p1TitheableGross - p1ReceivedFuel).toFixed(2)));
+  const p2TitheableNet = Math.max(0, Number((p2TitheableGross - p2ReceivedFuel).toFixed(2)));
+
+  const totalGross = Number((p1Gross + p2Gross).toFixed(2));
+  const totalNet = Number((p1Net + p2Net).toFixed(2));
+  const totalReceivedNet = Number((p1ReceivedNet + p2ReceivedNet).toFixed(2));
+  const totalPendingNet = Math.max(0, Number((totalNet - totalReceivedNet).toFixed(2)));
+
+  return {
+    byWeek,
+    totalWeeklyFuel: Number(totalWeeklyFuel.toFixed(2)),
+    totalGross,
+    totalNet,
+    totalReceivedNet,
+    totalPendingNet,
+    p1Net,
+    p2Net,
+    p1ReceivedNet,
+    p2ReceivedNet,
+    p1TitheableNet,
+    p2TitheableNet,
+    p1PendingNet: Math.max(0, Number((p1Net - p1ReceivedNet).toFixed(2))),
+    p2PendingNet: Math.max(0, Number((p2Net - p2ReceivedNet).toFixed(2)))
+  };
+}
+
 export function syncMonthIncomeAndTitheTransactions(state, targetYearMonth) {
   if (!state || !state.couple) return state?.transactions || [];
   const ym = targetYearMonth || state.selectedMonth || '2026-11';
@@ -204,22 +313,14 @@ export function syncMonthIncomeAndTitheTransactions(state, targetYearMonth) {
     newTransactions.splice(p2TxIndex, 1);
   }
 
-  // 3. Primícias (Dízimo + Ofertas) sobre Salário + Renda Extra Recebida (com applyTitheAndOffering)
+  // 3. Primícias (Dízimo + Ofertas) sobre Salário + Renda Extra Recebida Líquida (após gasolina semanal)
   const tithePct = couple.titheEnabled ? Number(couple.tithePercent ?? 10) : 0;
   const p1OffPct = couple.titheEnabled ? Number(couple.partner1OfferingPercent ?? 5) : 0;
   const p2OffPct = couple.titheEnabled ? Number(couple.partner2OfferingPercent ?? 5) : 0;
 
-  const monthExtras = (state.extraIncomes || []).filter((i) => i.date?.startsWith(ym));
-  const p1Extra = couple.includeExtraInTithe
-    ? monthExtras
-        .filter((i) => i.owner === 'partner1' && i.status === 'received' && i.applyTitheAndOffering !== false)
-        .reduce((a, i) => a + Number(i.amount || 0), 0)
-    : 0;
-  const p2Extra = couple.includeExtraInTithe
-    ? monthExtras
-        .filter((i) => i.owner === 'partner2' && i.status === 'received' && i.applyTitheAndOffering !== false)
-        .reduce((a, i) => a + Number(i.amount || 0), 0)
-    : 0;
+  const extraSummary = getMonthlyExtraNetSummary(state, ym);
+  const p1Extra = couple.includeExtraInTithe ? extraSummary.p1TitheableNet : 0;
+  const p2Extra = couple.includeExtraInTithe ? extraSummary.p2TitheableNet : 0;
 
   const p1TitheTotal = Number((((p1Sal + p1Extra) * (tithePct + p1OffPct)) / 100).toFixed(2));
   const p2TitheTotal = Number((((p2Sal + p2Extra) * (tithePct + p2OffPct)) / 100).toFixed(2));

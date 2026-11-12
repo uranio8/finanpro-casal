@@ -5,6 +5,7 @@ import {
   formatDateBR,
   getMonthLabel,
   getEffectiveMonthIncome,
+  getMonthlyExtraNetSummary,
   isAutoSalaryTransaction,
   isAutoTitheOrDonationTransaction
 } from '../utils/formatters';
@@ -49,8 +50,8 @@ export default function ReportPrintModal({ state, onClose }) {
   // Helper to compute any month's complete summary
   const computeMonthSummary = (ym) => {
     const eff = getEffectiveMonthIncome(state, ym);
-    const monthExtras = extraIncomes.filter((i) => i.date && i.date.startsWith(ym));
-    const extraTotal = monthExtras.reduce((a, i) => a + Number(i.amount || 0), 0);
+    const extraNetSummary = getMonthlyExtraNetSummary(state, ym);
+    const extraTotal = extraNetSummary.totalNet;
 
     const monthTxs = transactions.filter((t) => t.dueDate && t.dueDate.startsWith(ym));
     const adhocIncome = monthTxs
@@ -63,26 +64,8 @@ export default function ReportPrintModal({ state, onClose }) {
     const p1OffPct = couple.titheEnabled ? Number(couple.partner1OfferingPercent ?? 5) : 0;
     const p2OffPct = couple.titheEnabled ? Number(couple.partner2OfferingPercent ?? 5) : 0;
 
-    const p1ExtraTithe = couple.includeExtraInTithe
-      ? monthExtras
-          .filter(
-            (i) =>
-              i.owner === 'partner1' &&
-              i.status === 'received' &&
-              i.applyTitheAndOffering !== false
-          )
-          .reduce((a, i) => a + Number(i.amount || 0), 0)
-      : 0;
-    const p2ExtraTithe = couple.includeExtraInTithe
-      ? monthExtras
-          .filter(
-            (i) =>
-              i.owner === 'partner2' &&
-              i.status === 'received' &&
-              i.applyTitheAndOffering !== false
-          )
-          .reduce((a, i) => a + Number(i.amount || 0), 0)
-      : 0;
+    const p1ExtraTithe = couple.includeExtraInTithe ? extraNetSummary.p1TitheableNet : 0;
+    const p2ExtraTithe = couple.includeExtraInTithe ? extraNetSummary.p2TitheableNet : 0;
 
     const p1Consecrated = Number(
       (((eff.partner1Income + p1ExtraTithe) * (tithePct + p1OffPct)) / 100).toFixed(2)

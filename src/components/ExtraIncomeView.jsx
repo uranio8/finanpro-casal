@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   formatCurrency,
   formatDateBR,
-  getMonthLabel
+  getMonthLabel,
+  getMonthlyExtraNetSummary
 } from '../utils/formatters';
 
 const WEEKS = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4', 'Semana 5'];
@@ -12,7 +13,8 @@ export default function ExtraIncomeView({
   onAddExtraIncome,
   onUpdateExtraIncome,
   onToggleExtraIncomeStatus,
-  onDeleteExtraIncome
+  onDeleteExtraIncome,
+  onUpdateWeeklyExtraFuel
 }) {
   const [selectedWeek, setSelectedWeek] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'class' | 'sale' | 'service'
@@ -124,43 +126,49 @@ export default function ExtraIncomeView({
     return { tithe, offering, offeringPct, totalConsecrated, netAmount };
   };
 
-  // Summary metrics
+  // Summary metrics (com desconto semanal de gasolina e primícia sobre o líquido)
+  const extraNetSummary = useMemo(
+    () => getMonthlyExtraNetSummary(state, selectedMonth, ownerFilter),
+    [state, selectedMonth, ownerFilter]
+  );
+
   const metrics = useMemo(() => {
-    const totalGross = monthItems.reduce((acc, i) => acc + Number(i.amount || 0), 0);
-    const totalReceived = monthItems
-      .filter((i) => i.status === 'received')
-      .reduce((acc, i) => acc + Number(i.amount || 0), 0);
-    const totalPending = Math.max(0, totalGross - totalReceived);
+    const totalGrossBeforeWeeklyFuel = extraNetSummary.totalGross;
+    const totalWeeklyFuel = extraNetSummary.totalWeeklyFuel;
+    const totalGross = extraNetSummary.totalNet; // Total líquido após gasolina da semana
+    const totalReceived = extraNetSummary.totalReceivedNet;
+    const totalPending = extraNetSummary.totalPendingNet;
 
     const classItems = monthItems.filter((i) => i.type === 'class');
     const totalClassesAmount = classItems.reduce((acc, i) => acc + Number(i.amount || 0), 0);
     const totalClassHours = classItems.reduce((acc, i) => acc + Number(i.hoursOrQty || 0), 0);
-    const totalFuelCost = monthItems.reduce((acc, i) => acc + Number(i.fuelCost || 0), 0);
+    const totalItemFuelCost = monthItems.reduce((acc, i) => acc + Number(i.fuelCost || 0), 0);
+    const totalFuelCost = Number((totalItemFuelCost + totalWeeklyFuel).toFixed(2));
 
     const salesItems = monthItems.filter((i) => i.type !== 'class');
     const totalSalesAmount = salesItems.reduce((acc, i) => acc + Number(i.amount || 0), 0);
 
-    let totalTithe = 0;
-    let totalOffering = 0;
-    let pendingConsecrated = 0;
-    monthItems.forEach((item) => {
-      const calc = computeItemTitheAndOffering(item);
-      if (item.status === 'received') {
-        totalTithe += calc.tithe;
-        totalOffering += calc.offering;
-      } else {
-        pendingConsecrated += calc.totalConsecrated;
-      }
-    });
+    const tithePct = couple.titheEnabled && couple.includeExtraInTithe ? Number(couple.tithePercent ?? 10) : 0;
+    const p1OffPct = couple.titheEnabled && couple.includeExtraInTithe ? Number(couple.partner1OfferingPercent ?? 5) : 0;
+    const p2OffPct = couple.titheEnabled && couple.includeExtraInTithe ? Number(couple.partner2OfferingPercent ?? 5) : 0;
 
+    const p1Tithe = Number(((extraNetSummary.p1TitheableNet * tithePct) / 100).toFixed(2));
+    const p1Offering = Number(((extraNetSummary.p1TitheableNet * p1OffPct) / 100).toFixed(2));
+    const p2Tithe = Number(((extraNetSummary.p2TitheableNet * tithePct) / 100).toFixed(2));
+    const p2Offering = Number(((extraNetSummary.p2TitheableNet * p2OffPct) / 100).toFixed(2));
+
+    const totalTithe = Number((p1Tithe + p2Tithe).toFixed(2));
+    const totalOffering = Number((p1Offering + p2Offering).toFixed(2));
     const totalConsecrated = Number((totalTithe + totalOffering).toFixed(2));
-    const totalNet = Math.max(0, totalGross - totalConsecrated - pendingConsecrated);
+    const totalNet = Math.max(0, Number((totalGross - totalConsecrated).toFixed(2)));
 
     return {
+      totalGrossBeforeWeeklyFuel,
+      totalWeeklyFuel,
       totalGross,
       totalReceived,
       totalPending,
-      totalClassesAmount,
+      totalClassesAmount: Math.max(0, Number((totalClassesAmount - totalWeeklyFuel).toFixed(2))),
       totalClassHours,
       totalFuelCost,
       totalSalesAmount,
@@ -168,32 +176,39 @@ export default function ExtraIncomeView({
       totalTithe,
       totalOffering,
       totalConsecrated,
-      pendingConsecrated: Number(pendingConsecrated.toFixed(2)),
       totalNet
     };
-  }, [monthItems, couple]);
+  }, [monthItems, couple, extraNetSummary]);
 
   // Weekly breakdown
   const weeklySummary = useMemo(() => {
+    const tithePct = couple.titheEnabled && couple.includeExtraInTithe ? Number(couple.tithePercent ?? 10) : 0;
     return WEEKS.map((weekLabel) => {
-      const items = monthItems.filter((i) => i.weekOfMonth === weekLabel);
-      const total = items.reduce((acc, i) => acc + Number(i.amount || 0), 0);
-      const received = items
-        .filter((i) => i.status === 'received')
-        .reduce((acc, i) => acc + Number(i.amount || 0), 0);
-      const classesCount = items
-        .filter((i) => i.type === 'class')
-        .reduce((acc, i) => acc + Number(i.hoursOrQty || 0), 0);
+      const w = extraNetSummary.byWeek[weekLabel];
+      const offPct =
+        couple.titheEnabled && couple.includeExtraInTithe
+          ? Number(
+              w.targetOwner === 'partner2'
+                ? couple.partner2OfferingPercent ?? 5
+                : couple.partner1OfferingPercent ?? 5
+            )
+          : 0;
+      const weekTitheAndOffering = Number(
+        ((w.net * (tithePct + offPct)) / 100).toFixed(2)
+      );
       return {
         weekLabel,
-        count: items.length,
-        total,
-        received,
-        pending: Math.max(0, total - received),
-        classesCount
+        count: w.count,
+        gross: w.gross,
+        weeklyFuel: w.weeklyFuel,
+        total: w.net,
+        received: w.receivedNet,
+        pending: w.pendingNet,
+        classesCount: w.classesCount,
+        weekTitheAndOffering
       };
     });
-  }, [monthItems]);
+  }, [extraNetSummary, couple]);
 
   const filteredItems = useMemo(() => {
     return monthItems.filter((item) => {
@@ -399,8 +414,9 @@ export default function ExtraIncomeView({
         </div>
 
         <div className="weeks-grid">
-          {weeklySummary.map((w) => {
+          {weeklySummary.map((w, idx) => {
             const isSelected = selectedWeek === w.weekLabel;
+            const fuelInputId = `week-fuel-${idx}`;
             return (
               <div
                 key={w.weekLabel}
@@ -416,6 +432,11 @@ export default function ExtraIncomeView({
                   </span>
                 </div>
                 <div className="week-card-total">{formatCurrency(w.total)}</div>
+                {w.weeklyFuel > 0 && (
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Bruto: {formatCurrency(w.gross)} − Gasolina: {formatCurrency(w.weeklyFuel)}
+                  </div>
+                )}
                 <div className="week-card-sub">
                   <span className="text-emerald">
                     Recebido: {formatCurrency(w.received)}
@@ -426,10 +447,60 @@ export default function ExtraIncomeView({
                     </span>
                   )}
                 </div>
+                {w.weekTitheAndOffering > 0 && (
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Dízimo + Oferta (sobre líquido):{' '}
+                    <strong>{formatCurrency(w.weekTitheAndOffering)}</strong>
+                  </div>
+                )}
                 {w.classesCount > 0 && (
                   <small className="week-hours-tag">
                     <i className="fa-solid fa-clock"></i> {w.classesCount}h de aulas na semana
                   </small>
+                )}
+                {!isJointFilter && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      marginTop: '10px',
+                      paddingTop: '8px',
+                      borderTop: '1px dashed var(--border-color)'
+                    }}
+                  >
+                    <label
+                      htmlFor={fuelInputId}
+                      style={{
+                        display: 'block',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: 'var(--text-muted)',
+                        marginBottom: '4px'
+                      }}
+                    >
+                      <i className="fa-solid fa-gas-pump"></i> Gasolina da semana (R$)
+                    </label>
+                    <input
+                      id={fuelInputId}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0,00"
+                      value={w.weeklyFuel || ''}
+                      onChange={(e) =>
+                        onUpdateWeeklyExtraFuel &&
+                        onUpdateWeeklyExtraFuel(selectedMonth, w.weekLabel, e.target.value)
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '6px 8px',
+                        fontSize: '12.5px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-main)'
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             );

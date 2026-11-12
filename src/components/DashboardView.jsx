@@ -16,6 +16,7 @@ import {
   getMonthLabel,
   getDaysDiffFromToday,
   getEffectiveMonthIncome,
+  getMonthlyExtraNetSummary,
   isAutoSalaryTransaction,
   isAutoTitheOrDonationTransaction
 } from '../utils/formatters';
@@ -82,10 +83,12 @@ export default function DashboardView({
     });
   }, [extraIncomes, selectedMonth, ownerFilter]);
 
-  const totalExtraIncomeMonth = useMemo(
-    () => monthExtraIncomes.reduce((acc, i) => acc + Number(i.amount || 0), 0),
-    [monthExtraIncomes]
+  const extraNetSummary = useMemo(
+    () => getMonthlyExtraNetSummary(state, selectedMonth, ownerFilter),
+    [state, selectedMonth, ownerFilter]
   );
+
+  const totalExtraIncomeMonth = extraNetSummary.totalNet;
 
   // Current month transactions
   const monthTransactions = useMemo(() => {
@@ -131,27 +134,9 @@ export default function DashboardView({
     const p1Sal = effectiveMonthIncome.partner1Income;
     const p2Sal = effectiveMonthIncome.partner2Income;
 
-    const p1Extra = extraIncomes
-      .filter(
-        (i) =>
-          i.date &&
-          i.date.startsWith(selectedMonth) &&
-          i.owner === 'partner1' &&
-          i.applyTitheAndOffering !== false &&
-          i.status === 'received'
-      )
-      .reduce((acc, i) => acc + Number(i.amount || 0), 0);
-
-    const p2Extra = extraIncomes
-      .filter(
-        (i) =>
-          i.date &&
-          i.date.startsWith(selectedMonth) &&
-          i.owner === 'partner2' &&
-          i.applyTitheAndOffering !== false &&
-          i.status === 'received'
-      )
-      .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+    const fullMonthExtraSummary = getMonthlyExtraNetSummary(state, selectedMonth);
+    const p1Extra = fullMonthExtraSummary.p1TitheableNet;
+    const p2Extra = fullMonthExtraSummary.p2TitheableNet;
 
     const p1BaseForTithe = p1Sal + (couple.includeExtraInTithe ? p1Extra : 0);
     const p2BaseForTithe = p2Sal + (couple.includeExtraInTithe ? p2Extra : 0);
@@ -304,27 +289,9 @@ export default function DashboardView({
           const tithePct = Number(couple.tithePercent ?? 10);
           const p1OffPct = Number(couple.partner1OfferingPercent ?? 5);
           const p2OffPct = Number(couple.partner2OfferingPercent ?? 5);
-          const mExtras = (extraIncomes || []).filter((i) => i.date?.startsWith(ym));
-          const p1Ex = couple.includeExtraInTithe
-            ? mExtras
-                .filter(
-                  (i) =>
-                    i.owner === 'partner1' &&
-                    i.status === 'received' &&
-                    i.applyTitheAndOffering !== false
-                )
-                .reduce((a, i) => a + Number(i.amount || 0), 0)
-            : 0;
-          const p2Ex = couple.includeExtraInTithe
-            ? mExtras
-                .filter(
-                  (i) =>
-                    i.owner === 'partner2' &&
-                    i.status === 'received' &&
-                    i.applyTitheAndOffering !== false
-                )
-                .reduce((a, i) => a + Number(i.amount || 0), 0)
-            : 0;
+          const mExtraSummary = getMonthlyExtraNetSummary(state, ym);
+          const p1Ex = couple.includeExtraInTithe ? mExtraSummary.p1TitheableNet : 0;
+          const p2Ex = couple.includeExtraInTithe ? mExtraSummary.p2TitheableNet : 0;
           const p1TitheVal = Number(
             (((eff.partner1Income + p1Ex) * (tithePct + p1OffPct)) / 100).toFixed(2)
           );

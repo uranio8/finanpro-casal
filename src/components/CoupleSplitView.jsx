@@ -4,6 +4,7 @@ import {
   formatDateBR,
   getMonthLabel,
   getEffectiveMonthIncome,
+  getMonthlyExtraNetSummary,
   isAutoSalaryTransaction
 } from '../utils/formatters';
 
@@ -38,27 +39,19 @@ export default function CoupleSplitView({
     [state, selectedMonth]
   );
 
-  // Rendas extras recebidas e pendentes
-  const p1ExtraReceived = monthExtras
-    .filter((i) => i.owner === 'partner1' && i.status === 'received')
-    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
-  const p1ExtraTitheable = monthExtras
-    .filter((i) => i.owner === 'partner1' && i.status === 'received' && i.applyTitheAndOffering !== false)
-    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
-  const p1ExtraPending = monthExtras
-    .filter((i) => i.owner === 'partner1' && i.status === 'pending')
-    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
-  const p1ExtraTotal = p1ExtraReceived + p1ExtraPending;
+  // Rendas extras recebidas e pendentes (líquidas após gasolina semanal)
+  const extraNetSummary = useMemo(
+    () => getMonthlyExtraNetSummary(state, selectedMonth),
+    [state, selectedMonth]
+  );
+  const p1ExtraReceived = extraNetSummary.p1ReceivedNet;
+  const p1ExtraTitheable = extraNetSummary.p1TitheableNet;
+  const p1ExtraPending = extraNetSummary.p1PendingNet;
+  const p1ExtraTotal = extraNetSummary.p1Net;
 
-  const p2ExtraReceived = monthExtras
-    .filter((i) => i.owner === 'partner2' && i.status === 'received')
-    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
-  const p2ExtraTitheable = monthExtras
-    .filter((i) => i.owner === 'partner2' && i.status === 'received' && i.applyTitheAndOffering !== false)
-    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
-  const p2ExtraPending = monthExtras
-    .filter((i) => i.owner === 'partner2' && i.status === 'pending')
-    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+  const p2ExtraReceived = extraNetSummary.p2ReceivedNet;
+  const p2ExtraTitheable = extraNetSummary.p2TitheableNet;
+  const p2ExtraPending = extraNetSummary.p2PendingNet;
   const p2ExtraTotal = p2ExtraReceived + p2ExtraPending;
 
   // Receitas Avulsas adicionadas diretamente via "+ Nova Receita" em Lançamentos (excluindo salários automáticos)
