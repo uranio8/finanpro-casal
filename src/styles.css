@@ -1895,14 +1895,9 @@ td.text-center .row-actions {
   grid-column: 1 / -1;
 }
 
-@media (max-width: 560px) {
-  .form-grid-2 {
-    grid-template-columns: 1fr;
-  }
-}
-
 .form-grid-2 > *,
-.form-grid-3 > * {
+.form-grid-3 > *,
+.form-grid-4 > * {
   min-width: 0;
 }
 
@@ -1913,6 +1908,27 @@ td.text-center .row-actions {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .form-grid-2,
+  .form-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 12px;
 }
 
 .modal-card-info-badge {

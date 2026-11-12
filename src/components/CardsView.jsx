@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   formatCurrency,
   formatDateBR,
@@ -29,6 +29,23 @@ export default function CardsView({
   });
 
   const { cards, transactions, selectedMonth, couple, ownerFilter } = state;
+
+  // Fechar modais ao pressionar tecla Escape (WCAG)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (isModalOpen) {
+          setIsModalOpen(false);
+          setEditingCardId(null);
+        }
+        if (selectedCardInvoiceId) {
+          setSelectedCardInvoiceId(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen, selectedCardInvoiceId]);
 
   const openNewCardModal = () => {
     setEditingCardId(null);
@@ -368,50 +385,52 @@ export default function CardsView({
                   <p>Nenhum lançamento no cartão para o mês de {getMonthLabel(selectedMonth)}.</p>
                 </div>
               ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th className="text-center">Data</th>
-                      <th>Descrição</th>
-                      <th className="text-center">Parcela</th>
-                      <th className="text-center">Divisão</th>
-                      <th className="text-center">Valor</th>
-                      <th className="text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedCardInvoice.monthInvoiceTxs.map((t) => (
-                      <tr key={t.id}>
-                        <td className="text-center font-mono-val">{formatDateBR(t.dueDate)}</td>
-                        <td>
-                          <strong>{t.title}</strong>
-                        </td>
-                        <td className="text-center">
-                          {t.totalInstallments
-                            ? `${t.installmentNumber}/${t.totalInstallments}`
-                            : 'À vista'}
-                        </td>
-                        <td className="text-center">
-                          <span className={`owner-badge ${t.owner}`}>
-                            {t.owner === 'joint'
-                              ? 'Casa (Casal)'
-                              : t.owner === 'partner1'
-                                ? couple.partner1Name
-                                : couple.partner2Name}
-                          </span>
-                        </td>
-                        <td className="text-center">
-                          <strong className="font-mono-val">{formatCurrency(t.amount)}</strong>
-                        </td>
-                        <td className="text-center">
-                          <span className={`status-tag ${t.status}`}>
-                            {t.status === 'paid' ? 'Pago' : 'Pendente'}
-                          </span>
-                        </td>
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th className="text-center">Data</th>
+                        <th>Descrição</th>
+                        <th className="text-center">Parcela</th>
+                        <th className="text-center">Divisão</th>
+                        <th className="text-center">Valor</th>
+                        <th className="text-center">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {selectedCardInvoice.monthInvoiceTxs.map((t) => (
+                        <tr key={t.id}>
+                          <td className="text-center font-mono-val">{formatDateBR(t.dueDate)}</td>
+                          <td>
+                            <strong>{t.title}</strong>
+                          </td>
+                          <td className="text-center">
+                            {t.totalInstallments
+                              ? `${t.installmentNumber}/${t.totalInstallments}`
+                              : 'À vista'}
+                          </td>
+                          <td className="text-center">
+                            <span className={`owner-badge ${t.owner}`}>
+                              {t.owner === 'joint'
+                                ? 'Casa (Casal)'
+                                : t.owner === 'partner1'
+                                  ? couple.partner1Name
+                                  : couple.partner2Name}
+                            </span>
+                          </td>
+                          <td className="text-center">
+                            <strong className="font-mono-val">{formatCurrency(t.amount)}</strong>
+                          </td>
+                          <td className="text-center">
+                            <span className={`status-tag ${t.status}`}>
+                              {t.status === 'paid' ? 'Pago' : 'Pendente'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
             <div className="modal-footer">

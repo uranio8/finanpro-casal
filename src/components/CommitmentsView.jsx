@@ -39,6 +39,7 @@ export default function CommitmentsView({
   const [simulatorOpen, setSimulatorOpen] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formError, setFormError] = useState('');
   const modalVisible = isModalOpen || externalModalOpen;
 
   const { commitments, transactions, couple, cards, ownerFilter } = state;
@@ -55,8 +56,31 @@ export default function CommitmentsView({
 
   const closeNewModal = () => {
     setIsModalOpen(false);
+    setFormError('');
     if (setExternalModalOpen) setExternalModalOpen(false);
   };
+
+  // Fechar modais ao pressionar tecla Escape (WCAG)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (isModalOpen || externalModalOpen) {
+          closeNewModal();
+        }
+        if (selectedDetailsId) {
+          setSelectedDetailsId(null);
+        }
+        if (editingComm) {
+          setEditingComm(null);
+        }
+        if (simulatorOpen) {
+          setSimulatorOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen, externalModalOpen, selectedDetailsId, editingComm, simulatorOpen]);
 
   // Form State for New Commitment
   const [form, setForm] = useState({
@@ -235,11 +259,12 @@ export default function CommitmentsView({
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setFormError('');
     const total = Number(form.totalAmount);
     const isRecurring = form.type === 'recurring';
     if (!form.title.trim() || total <= 0 || !form.startDate) return;
     if (!installmentPreview.valid) {
-      window.alert('O valor da entrada inicial deve ser menor que o valor total do compromisso.');
+      setFormError('O valor da entrada inicial deve ser menor que o valor total do compromisso.');
       return;
     }
 
@@ -876,6 +901,12 @@ export default function CommitmentsView({
               </button>
             </div>
             <form onSubmit={handleSubmit} className="modal-body">
+              {formError && (
+                <div className="form-error-banner">
+                  <i className="fa-solid fa-triangle-exclamation"></i>
+                  <span>{formError}</span>
+                </div>
+              )}
               <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="comm-title">Descrição da Compra ou Conta Fixa *</label>
