@@ -3,6 +3,9 @@ import { CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
   formatDateBR,
+  getMonthLabel,
+  shiftYearMonth,
+  getEffectiveMonthIncome,
   addMonthsToDate,
   buildSafeDueDate
 } from '../utils/formatters';
@@ -10,6 +13,8 @@ import {
 export default function CommitmentsView({
   state,
   onAddCommitment,
+  onUpdateCommitment,
+  onAnticipateInstallments,
   onDeleteCommitment,
   onQuickPayTransaction,
   externalModalOpen,
@@ -22,12 +27,31 @@ export default function CommitmentsView({
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'settled' | 'active'
   const [selectedDetailsId, setSelectedDetailsId] = useState(null);
 
+  // Estado para Edição de Contrato Existente
+  const [editingComm, setEditingComm] = useState(null);
+
+  // Estado para Antecipação de Parcelas com Desconto (dentro do modal de detalhes)
+  const [anticipateCount, setAnticipateCount] = useState(2);
+  const [anticipateDiscount, setAnticipateDiscount] = useState('');
+  const [anticipateMarkPaid, setAnticipateMarkPaid] = useState(true);
+
+  // Estado para o Simulador "Posso Comprar?" (What-If)
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const modalVisible = isModalOpen || externalModalOpen;
 
   const { commitments, transactions, couple, cards, ownerFilter } = state;
 
   const defaultCard = cards[0] || { id: 'card-inter', dueDay: 15, owner: 'partner1' };
+
+  const [simForm, setSimForm] = useState({
+    title: 'Nova Compra Planejada',
+    totalAmount: '2400',
+    installmentsCount: 10,
+    cardId: defaultCard.id,
+    startMonth: state.selectedMonth || '2026-11'
+  });
 
   const closeNewModal = () => {
     setIsModalOpen(false);
@@ -280,6 +304,151 @@ export default function CommitmentsView({
   const totalPaidAll = filteredList.reduce((acc, c) => acc + c.totalPaid, 0);
   const totalRemainingAll = filteredList.reduce((acc, c) => acc + c.remaining, 0);
 
+  // Simulador "Posso Comprar?" (Projeção de 12 meses + Limite do Cartão + Melhor Mês)
+  const simulationResult = useMemo(() => {
+    const simTotal = Math.max(0, Number(simForm.totalAmount) || 0);
+    const simCount = Math.max(1, parseInt(simForm.installmentsCount, 10) || 1);
+    const monthlyInstallment = simCount > 0 ? Number((simTotal / simCount).toFixed(2)) : 0;
+    const baseStartYm = simForm.startMonth || state.selectedMonth || '2026-11';
+
+    const chosenCard = cards.find((c) => c.id === simForm.cardId) || null;
+    const cardUsedLimit = chosenCard
+      ? transactions
+          .filter(
+            (t) => t.cardId === chosenCard.id && t.type === 'expense' && t.status === 'pending'
+          )
+          .reduce((a, t) => a + Number(t.amount || 0), 0)
+      : 0;
+    const cardAvailableLimit = chosenCard
+      ? Math.max(0, Number(chosenCard.limit || 0) - cardUsedLimit)
+      : Infinity;
+    const fitsCardLimit = !chosenCard || simTotal <= cardAvailableLimit;
+
+    const tithePct = couple.titheEnabled ? Number(couple.tithePercent ?? 10) : 0;
+    const p1Off = couple.titheEnabled ? Number(couple.partner1OfferingPercent ?? 5) : 0;
+    const p2Off = couple.titheEnabled ? Number(couple.partner2OfferingPercent ?? 5) : 0;
+
+    const monthsProjection = [];
+    for (let i = 0; i < 12; i++) {
+      const ym = shiftYearMonth(baseStartYm, i);
+      const eff = getEffectiveMonthIncome(state, ym);
+      const monthExtras = (state.extraIncomes || []).filter(
+        (ex) => ex.date && ex.date.startsWith(ym)
+      );
+      const extraTotal = monthExtras.reduce((a, ex) => a + Number(ex.amount || 0), 0);
+
+      const p1Tithe = ((eff.partner1Income || 0) * (tithePct + p1Off)) / 100;
+      const p2Tithe = ((eff.partner2Income || 0) * (tithePct + p2Off)) / 100;
+      const autoPrimicias = Number((p1Tithe + p2Tithe + (eff.donationAmount || 0)).toFixed(2));
+
+      const monthExpenses = transactions.filter(
+        (t) => t.type === 'expense' && t.dueDate && t.dueDate.startsWith(ym)
+      );
+      const hasDizimoTx = monthExpenses.some((t) => t.category === 'dizimo');
+      const currentExpenses =
+        monthExpenses.reduce((a, t) => a + Number(t.amount || 0), 0) +
+        (hasDizimoTx ? 0 : autoPrimicias);
+
+      const totalIncome = eff.partner1Income + eff.partner2Income + extraTotal;
+      const currentFreeBalance = totalIncome - currentExpenses;
+      const hasSimInstallment = i < simCount;
+      const newFreeBalance =
+        currentFreeBalance - (hasSimInstallment ? monthlyInstallment : 0);
+
+      monthsProjection.push({
+        ym,
+        label: getMonthLabel(ym),
+        currentFreeBalance,
+        newFreeBalance,
+        hasSimInstallment
+      });
+    }
+
+    const activeMonths = monthsProjection.filter((m) => m.hasSimInstallment);
+    const minNewBalance =
+      activeMonths.length > 0
+        ? Math.min(...activeMonths.map((m) => m.newFreeBalance))
+        : 0;
+    const tightestMonth =
+      activeMonths.find((m) => m.newFreeBalance === minNewBalance) || activeMonths[0];
+
+    // Melhor mês para começar (maior folga de caixa nos próximos 6 meses)
+    const bestStartCandidate = [...monthsProjection.slice(0, 6)].sort(
+      (a, b) => b.currentFreeBalance - a.currentFreeBalance
+    )[0];
+
+    let status = 'safe'; // 'safe' | 'warning' | 'danger'
+    if (!fitsCardLimit || minNewBalance < 0) {
+      status = 'danger';
+    } else if (minNewBalance < Number(couple.monthlySavingsTarget || 1500) * 0.5) {
+      status = 'warning';
+    }
+
+    return {
+      simTotal,
+      simCount,
+      monthlyInstallment,
+      chosenCard,
+      cardAvailableLimit,
+      fitsCardLimit,
+      monthsProjection,
+      minNewBalance,
+      tightestMonth,
+      bestStartCandidate,
+      status
+    };
+  }, [simForm, state, cards, transactions, couple]);
+
+  const handleConvertSimulationToReal = () => {
+    const chosen = cards.find((c) => c.id === simForm.cardId) || defaultCard;
+    const startYm = simForm.startMonth || state.selectedMonth;
+    setForm({
+      title: simForm.title || 'Nova Compra Parcelada',
+      category: 'eletro',
+      type: 'installment',
+      totalAmount: String(simForm.totalAmount || ''),
+      hasDownPayment: false,
+      downPayment: '',
+      installmentsCount: Number(simForm.installmentsCount) || 6,
+      startDate: buildSafeDueDate(startYm, chosen.dueDay || 15),
+      paymentMethod: 'Cartão de Crédito',
+      cardId: chosen.id,
+      owner: 'joint',
+      paidBy: chosen.owner === 'partner2' ? 'partner2' : 'partner1',
+      notes: 'Criado a partir do Simulador Posso Comprar'
+    });
+    setIsModalOpen(true);
+  };
+
+  const openEditCommitmentModal = (comm) => {
+    const pendingRegular = (comm.linked || []).filter(
+      (t) => t.status === 'pending' && t.installmentNumber > 0
+    );
+    const sampleAmount =
+      pendingRegular.length > 0 ? pendingRegular[0].amount : '';
+    setEditingComm({
+      id: comm.id,
+      title: comm.title || '',
+      category: comm.category || 'eletro',
+      owner: comm.owner || 'joint',
+      paidBy: comm.paidBy || 'partner1',
+      paymentMethod: comm.paymentMethod || 'Cartão de Crédito',
+      cardId: comm.cardId || defaultCard.id,
+      notes: comm.notes || '',
+      pendingInstallmentAmount: sampleAmount,
+      pendingCount: pendingRegular.length
+    });
+  };
+
+  const handleSaveEditedCommitment = (e) => {
+    e.preventDefault();
+    if (!editingComm || !editingComm.title.trim()) return;
+    if (onUpdateCommitment) {
+      onUpdateCommitment(editingComm.id, editingComm);
+    }
+    setEditingComm(null);
+  };
+
   return (
     <div className="view-container">
       {/* HEADER DA SEÇÃO */}
@@ -290,10 +459,17 @@ export default function CommitmentsView({
           </h2>
           <p>
             Cadastre suas compras parceladas nos cartões{' '}
-            <strong>{cards.map((c) => c.name.split(' ')[0]).join(' e ')}</strong> e acompanhe quando cada parcelamento termina!
+            <strong>{cards.map((c) => c.name.split(' ')[0]).join(' e ')}</strong>, simule novas compras e acompanhe quando cada parcelamento termina!
           </p>
         </div>
-        <div className="header-btns">
+        <div className="header-btns" style={{ flexWrap: 'wrap' }}>
+          <button
+            className={`btn ${simulatorOpen ? 'btn-primary' : 'btn-soft'}`}
+            onClick={() => setSimulatorOpen(!simulatorOpen)}
+          >
+            <i className="fa-solid fa-wand-magic-sparkles"></i>{' '}
+            {simulatorOpen ? 'Fechar Simulador' : '🔮 Simulador: Posso Comprar?'}
+          </button>
           <button className="btn btn-outline" onClick={handleExportCSV}>
             <i className="fa-solid fa-file-csv"></i> Exportar CSV
           </button>
@@ -302,6 +478,166 @@ export default function CommitmentsView({
           </button>
         </div>
       </div>
+
+      {/* PAINEL EXPANSÍVEL: SIMULADOR "POSSO COMPRAR?" (WHAT-IF) */}
+      {simulatorOpen && (
+        <div
+          className="card"
+          style={{
+            border: '2px solid var(--primary)',
+            background: 'var(--bg-card)'
+          }}
+        >
+          <div className="card-header flex-between wrap" style={{ marginBottom: '14px' }}>
+            <div>
+              <h3>
+                <i className="fa-solid fa-crystal-ball text-emerald"></i> Simulador Inteligente:
+                &ldquo;Posso Comprar?&rdquo; (Projeção nos Próximos 12 Meses)
+              </h3>
+              <p className="card-subtitle">
+                Teste o impacto de um novo parcelamento no Saldo Livre futuro do casal e no limite do
+                cartão antes de passar a compra!
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={handleConvertSimulationToReal}
+            >
+              <i className="fa-solid fa-check-double"></i> Transformar em Parcelamento Real
+            </button>
+          </div>
+
+          <div className="form-grid-4" style={{ marginBottom: '16px' }}>
+            <div className="form-group">
+              <label htmlFor="sim-title">O que vocês pensam em comprar?</label>
+              <input
+                id="sim-title"
+                type="text"
+                value={simForm.title}
+                onChange={(e) => setSimForm({ ...simForm, title: e.target.value })}
+                placeholder="Ex: Ar-Condicionado, Viagem..."
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="sim-amount">Valor Total da Compra (R$)</label>
+              <input
+                id="sim-amount"
+                type="number"
+                min="1"
+                step="10"
+                value={simForm.totalAmount}
+                onChange={(e) => setSimForm({ ...simForm, totalAmount: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="sim-inst">Parcelar em quantas vezes?</label>
+              <select
+                id="sim-inst"
+                value={simForm.installmentsCount}
+                onChange={(e) =>
+                  setSimForm({ ...simForm, installmentsCount: Number(e.target.value) })
+                }
+              >
+                {[1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 24, 36].map((n) => (
+                  <option key={n} value={n}>
+                    {n}x de {formatCurrency((Number(simForm.totalAmount) || 0) / n)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="sim-card">Em qual Cartão?</label>
+              <select
+                id="sim-card"
+                value={simForm.cardId}
+                onChange={(e) => setSimForm({ ...simForm, cardId: e.target.value })}
+              >
+                {cards.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* VEREDITO INTELIGENTE */}
+          <div
+            className="installment-plan-box"
+            style={{
+              marginBottom: '14px',
+              borderLeft: `5px solid ${
+                simulationResult.status === 'safe'
+                  ? '#10b981'
+                  : simulationResult.status === 'warning'
+                  ? '#f59e0b'
+                  : '#ef4444'
+              }`
+            }}
+          >
+            <div className="flex-between wrap" style={{ gap: '12px' }}>
+              <div>
+                <strong style={{ fontSize: '15px', display: 'block' }}>
+                  {simulationResult.status === 'safe'
+                    ? '✅ Compra Segura! Cabe com folga no orçamento de todos os meses.'
+                    : simulationResult.status === 'warning'
+                    ? '⚠️ Atenção: A compra cabe, mas reduzirá a margem de poupança em alguns meses.'
+                    : '🛑 Alerta de Risco: Limite insuficiente no cartão ou Saldo Livre negativo em meses futuros!'}
+                </strong>
+                <small style={{ color: 'var(--text-secondary)' }}>
+                  Parcela simulada: <strong>{formatCurrency(simulationResult.monthlyInstallment)}/mês</strong>{' '}
+                  durante {simulationResult.simCount} meses · Menor Saldo Livre no período:{' '}
+                  <strong>
+                    {formatCurrency(simulationResult.minNewBalance)} (
+                    {simulationResult.tightestMonth?.label})
+                  </strong>
+                </small>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                {simulationResult.chosenCard && (
+                  <div style={{ fontSize: '12px' }}>
+                    Limite disponível no {simulationResult.chosenCard.name.split(' ')[0]}:{' '}
+                    <strong
+                      className={simulationResult.fitsCardLimit ? 'text-emerald' : 'text-danger'}
+                    >
+                      {formatCurrency(simulationResult.cardAvailableLimit)}
+                    </strong>
+                  </div>
+                )}
+                {simulationResult.bestStartCandidate && (
+                  <small style={{ color: 'var(--primary)', fontWeight: 700 }}>
+                    💡 Mês mais folgado p/ iniciar: {simulationResult.bestStartCandidate.label} (Sobra
+                    atual de {formatCurrency(simulationResult.bestStartCandidate.currentFreeBalance)})
+                  </small>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* MINI-CARROSSEL DOS PRÓXIMOS 12 MESES */}
+          <div className="preview-pills-scroll">
+            {simulationResult.monthsProjection.map((m) => (
+              <div
+                key={m.ym}
+                className="preview-pill"
+                style={{
+                  minWidth: '155px',
+                  borderColor: m.newFreeBalance < 0 ? '#ef4444' : 'var(--border-color)'
+                }}
+              >
+                <span>{m.label}</span>
+                <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                  Atual: {formatCurrency(m.currentFreeBalance)}
+                </small>
+                <strong className={m.newFreeBalance >= 0 ? 'text-emerald' : 'text-danger'}>
+                  Com compra: {formatCurrency(m.newFreeBalance)}
+                </strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* RESUMO RÁPIDO DOS COMPROMISSOS */}
       <div className="kpi-grid-3">
@@ -474,10 +810,21 @@ export default function CommitmentsView({
                     <div className="row-actions">
                       <button
                         className="icon-btn"
-                        title="Ver Cronograma de Parcelas"
-                        onClick={() => setSelectedDetailsId(item.id)}
+                        title="Ver Cronograma e Antecipar Parcelas"
+                        onClick={() => {
+                          setSelectedDetailsId(item.id);
+                          setAnticipateCount(1);
+                          setAnticipateDiscount('');
+                        }}
                       >
                         <i className="fa-solid fa-eye"></i>
+                      </button>
+                      <button
+                        className="icon-btn"
+                        title="Editar Contrato / Parcelamento"
+                        onClick={() => openEditCommitmentModal(item)}
+                      >
+                        <i className="fa-solid fa-pen-to-square"></i>
                       </button>
                       <button
                         className="icon-btn danger"
@@ -771,10 +1118,29 @@ export default function CommitmentsView({
         </div>
       )}
 
-      {/* MODAL SECUNDÁRIO: DETALHES E CRONOGRAMA DE PARCELAS */}
+      {/* MODAL SECUNDÁRIO: DETALHES, ANTECIPAÇÃO COM DESCONTO E CRONOGRAMA DE PARCELAS */}
       {(() => {
         const activeDetails = enrichedCommitments.find((c) => c.id === selectedDetailsId);
         if (!activeDetails) return null;
+
+        const pendingInstallments = activeDetails.linked
+          .filter((t) => t.status === 'pending' && t.installmentNumber > 0)
+          .sort((a, b) => b.dueDate.localeCompare(a.dueDate)); // Das últimas p/ as primeiras (padrão Nubank/Inter)
+
+        const clampedCount = Math.min(
+          Math.max(1, Number(anticipateCount) || 1),
+          Math.max(1, pendingInstallments.length)
+        );
+        const selectedToAnticipate = pendingInstallments.slice(0, clampedCount);
+        const originalSumToAnticipate = selectedToAnticipate.reduce(
+          (a, t) => a + Number(t.amount || 0),
+          0
+        );
+        const discountNum = Math.max(0, Number(anticipateDiscount) || 0);
+        const finalDiscountedSum = Math.max(
+          0.01 * clampedCount,
+          Number((originalSumToAnticipate - discountNum).toFixed(2))
+        );
 
         return (
           <div className="modal-backdrop" onClick={() => setSelectedDetailsId(null)}>
@@ -787,9 +1153,21 @@ export default function CommitmentsView({
                     {activeDetails.progressPct}%
                   </small>
                 </div>
-                <button className="close-btn" onClick={() => setSelectedDetailsId(null)}>
-                  <i className="fa-solid fa-xmark"></i>
-                </button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={() => {
+                      setSelectedDetailsId(null);
+                      openEditCommitmentModal(activeDetails);
+                    }}
+                  >
+                    <i className="fa-solid fa-pen-to-square"></i> Editar Contrato
+                  </button>
+                  <button className="close-btn" onClick={() => setSelectedDetailsId(null)}>
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
               </div>
               <div className="modal-body">
                 <div className="kpi-grid-3" style={{ marginBottom: '16px' }}>
@@ -806,6 +1184,102 @@ export default function CommitmentsView({
                     <strong className="text-amber">{formatCurrency(activeDetails.remaining)}</strong>
                   </div>
                 </div>
+
+                {/* PAINEL DE ANTECIPAÇÃO DE PARCELAS COM DESCONTO */}
+                {pendingInstallments.length > 0 && onAnticipateInstallments && (
+                  <div
+                    className="installment-plan-box"
+                    style={{
+                      marginBottom: '18px',
+                      border: '1px solid var(--primary)',
+                      background: 'var(--bg-subtle)'
+                    }}
+                  >
+                    <div className="flex-between wrap" style={{ marginBottom: '10px', gap: '8px' }}>
+                      <h4 style={{ margin: 0 }}>
+                        <i className="fa-solid fa-bolt text-emerald"></i> Antecipar Parcelas Futuras
+                        com Desconto ({getMonthLabel(state.selectedMonth)})
+                      </h4>
+                      <span className="badge-pill badge-emerald">
+                        {pendingInstallments.length} parcela(s) pendente(s)
+                      </span>
+                    </div>
+
+                    <div className="form-grid-3" style={{ marginBottom: '12px' }}>
+                      <div className="form-group">
+                        <label htmlFor="ant-count">Quantas parcelas finais antecipar?</label>
+                        <select
+                          id="ant-count"
+                          value={clampedCount}
+                          onChange={(e) => setAnticipateCount(Number(e.target.value))}
+                        >
+                          {Array.from(
+                            { length: pendingInstallments.length },
+                            (_, idx) => idx + 1
+                          ).map((n) => (
+                            <option key={n} value={n}>
+                              {n} {n === 1 ? 'última parcela' : 'últimas parcelas'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="ant-disc">Desconto Obtido no App do Banco (R$)</label>
+                        <input
+                          id="ant-disc"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="Ex: 45.00"
+                          value={anticipateDiscount}
+                          onChange={(e) => setAnticipateDiscount(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="ant-status">Como registrar em {getMonthLabel(state.selectedMonth)}?</label>
+                        <select
+                          id="ant-status"
+                          value={anticipateMarkPaid ? 'paid' : 'pending'}
+                          onChange={(e) => setAnticipateMarkPaid(e.target.value === 'paid')}
+                        >
+                          <option value="paid">✅ Já Quitado / Pago Agora</option>
+                          <option value="pending">💳 Na Fatura Atual (Pendente)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex-between wrap" style={{ gap: '12px' }}>
+                      <div style={{ fontSize: '13px' }}>
+                        Valor original: <strong>{formatCurrency(originalSumToAnticipate)}</strong> ·{' '}
+                        Valor final com desconto:{' '}
+                        <strong className="text-emerald">
+                          {formatCurrency(finalDiscountedSum)}
+                        </strong>
+                        {discountNum > 0 && (
+                          <span style={{ marginLeft: '6px', color: 'var(--primary)', fontWeight: 700 }}>
+                            (Economia de {formatCurrency(discountNum)})
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => {
+                          onAnticipateInstallments(
+                            activeDetails.id,
+                            selectedToAnticipate.map((t) => t.id),
+                            discountNum,
+                            anticipateMarkPaid
+                          );
+                          setAnticipateDiscount('');
+                        }}
+                      >
+                        <i className="fa-solid fa-check-double"></i> Confirmar Antecipação de{' '}
+                        {clampedCount} Parcela(s)
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <h4>Cronograma Completo de Parcelas</h4>
                 <div className="schedule-list">
@@ -843,6 +1317,166 @@ export default function CommitmentsView({
           </div>
         );
       })()}
+
+      {/* MODAL: EDITAR PARCELAMENTO / CONTA FIXA EXISTENTE */}
+      {editingComm && (
+        <div className="modal-backdrop" onClick={() => setEditingComm(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>
+                <i className="fa-solid fa-pen-to-square text-emerald"></i> Editar Contrato /
+                Parcelamento
+              </h3>
+              <button className="close-btn" onClick={() => setEditingComm(null)}>
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <form onSubmit={handleSaveEditedCommitment} className="modal-body">
+              <div className="form-group">
+                <label htmlFor="edit-comm-title">Descrição do Contrato / Compra *</label>
+                <input
+                  id="edit-comm-title"
+                  type="text"
+                  required
+                  value={editingComm.title}
+                  onChange={(e) => setEditingComm({ ...editingComm, title: e.target.value })}
+                />
+              </div>
+
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label htmlFor="edit-comm-cat">Categoria *</label>
+                  <select
+                    id="edit-comm-cat"
+                    value={editingComm.category}
+                    onChange={(e) => setEditingComm({ ...editingComm, category: e.target.value })}
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="edit-comm-owner">Divisão do Gasto *</label>
+                  <select
+                    id="edit-comm-owner"
+                    value={editingComm.owner}
+                    onChange={(e) => setEditingComm({ ...editingComm, owner: e.target.value })}
+                  >
+                    <option value="joint">🏠 Conjunto da Casa (Casal)</option>
+                    <option value="partner1">👤 Individual — {couple.partner1Name}</option>
+                    <option value="partner2">👤 Individual — {couple.partner2Name}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label htmlFor="edit-comm-method">Forma de Pagamento *</label>
+                  <select
+                    id="edit-comm-method"
+                    value={editingComm.paymentMethod}
+                    onChange={(e) =>
+                      setEditingComm({ ...editingComm, paymentMethod: e.target.value })
+                    }
+                  >
+                    <option value="Cartão de Crédito">💳 Cartão de Crédito</option>
+                    <option value="PIX">💠 PIX / Conta Corrente</option>
+                    <option value="Boleto">📄 Boleto Bancário</option>
+                    <option value="Débito Automático">🔄 Débito Automático</option>
+                  </select>
+                </div>
+
+                {editingComm.paymentMethod === 'Cartão de Crédito' ? (
+                  <div className="form-group">
+                    <label htmlFor="edit-comm-card">Qual Cartão? *</label>
+                    <select
+                      id="edit-comm-card"
+                      value={editingComm.cardId}
+                      onChange={(e) => {
+                        const chosen = cards.find((c) => c.id === e.target.value);
+                        setEditingComm({
+                          ...editingComm,
+                          cardId: e.target.value,
+                          paidBy: chosen?.owner === 'partner2' ? 'partner2' : 'partner1'
+                        });
+                      }}
+                    >
+                      {cards.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} (Vence dia {c.dueDay})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="form-group">
+                    <label htmlFor="edit-comm-paidby">Quem Paga? *</label>
+                    <select
+                      id="edit-comm-paidby"
+                      value={editingComm.paidBy}
+                      onChange={(e) => setEditingComm({ ...editingComm, paidBy: e.target.value })}
+                    >
+                      <option value="partner1">{couple.partner1Name}</option>
+                      <option value="partner2">{couple.partner2Name}</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {editingComm.pendingCount > 0 && (
+                <div className="form-group">
+                  <label htmlFor="edit-comm-pending-val">
+                    Valor das {editingComm.pendingCount} Parcelas Pendentes Futuras (R$)
+                  </label>
+                  <input
+                    id="edit-comm-pending-val"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={editingComm.pendingInstallmentAmount}
+                    onChange={(e) =>
+                      setEditingComm({
+                        ...editingComm,
+                        pendingInstallmentAmount: e.target.value
+                      })
+                    }
+                  />
+                  <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                    As parcelas já pagas permanecem intactas; apenas as pendentes serão reajustadas.
+                  </small>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label htmlFor="edit-comm-notes">Observações</label>
+                <input
+                  id="edit-comm-notes"
+                  type="text"
+                  value={editingComm.notes}
+                  onChange={(e) => setEditingComm({ ...editingComm, notes: e.target.value })}
+                />
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setEditingComm(null)}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  <i className="fa-solid fa-check"></i> Salvar Alterações do Contrato
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -27,7 +27,8 @@ export default function DashboardView({
   onOpenNewTransaction,
   onQuickPayTransaction,
   onOpenCommitmentModal,
-  onOpenMonthIncomeModal
+  onOpenMonthIncomeModal,
+  onOpenReportModal
 }) {
   const [cashFlowYear, setCashFlowYear] = useState(state.selectedMonth.split('-')[0] || '2026');
   const [cashFlowFilter, setCashFlowFilter] = useState('all'); // 'all' | 'paid' | 'pending'
@@ -451,8 +452,11 @@ export default function DashboardView({
           </div>
           <div className="progress-hero-right">
             <div className="big-pct">{paidPercentage}% quitado</div>
-            <button className="btn btn-sm btn-outline" onClick={() => window.print()}>
-              <i className="fa-solid fa-file-pdf"></i> Relatório PDF
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={() => (onOpenReportModal ? onOpenReportModal() : window.print())}
+            >
+              <i className="fa-solid fa-file-pdf"></i> Relatório Mensal &amp; Anual (PDF)
             </button>
           </div>
         </div>

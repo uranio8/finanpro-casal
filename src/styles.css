@@ -2236,16 +2236,36 @@ td.text-center .row-actions {
   margin-top: 2px;
 }
 
+.form-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 12px;
+}
+
 @media print {
   .sidebar,
   .topbar,
   .fab-container,
+  .no-print,
   .btn {
     display: none !important;
   }
   .main-content {
     margin-left: 0 !important;
     max-width: 100% !important;
+  }
+  .print-modal-backdrop {
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+  }
+  .print-report-modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
   }
 }
 

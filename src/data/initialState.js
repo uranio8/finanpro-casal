@@ -63,7 +63,7 @@ export const THEMES = [
 ];
 
 export const INITIAL_STATE = {
-  version: '1.5.0',
+  version: '2.0.0',
   selectedMonth: '2026-11',
   ownerFilter: 'all', // 'all' | 'joint' | 'partner1' | 'partner2'
   couple: {
@@ -93,6 +93,7 @@ export const INITIAL_STATE = {
       donationAmount: 0
     }
   },
+  monthlySettlements: {},
   categoryBudgets: {
     dizimo: 1950,
     moradia: 3200,

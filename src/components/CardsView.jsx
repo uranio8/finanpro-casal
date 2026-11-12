@@ -196,8 +196,8 @@ export default function CardsView({
                     {card.owner === 'joint'
                       ? 'Cartão da Casa (Casal)'
                       : card.owner === 'partner1'
-                      ? `Titular: ${couple.partner1Name}`
-                      : `Titular: ${couple.partner2Name}`}
+                        ? `Titular: ${couple.partner1Name}`
+                        : `Titular: ${couple.partner2Name}`}
                   </span>
                   <h4>{card.name}</h4>
                 </div>
@@ -396,8 +396,8 @@ export default function CardsView({
                             {t.owner === 'joint'
                               ? 'Casa (Casal)'
                               : t.owner === 'partner1'
-                              ? couple.partner1Name
-                              : couple.partner2Name}
+                                ? couple.partner1Name
+                                : couple.partner2Name}
                           </span>
                         </td>
                         <td className="text-center">

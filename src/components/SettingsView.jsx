@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CATEGORIES, THEMES } from '../data/initialState';
 import { formatCurrency } from '../utils/formatters';
+import { SUPABASE_SQL_SETUP, isSupabaseConfigured } from '../utils/supabaseSync';
 
 export default function SettingsView({
   state,
@@ -8,9 +9,23 @@ export default function SettingsView({
   onUpdateCategoryBudgets,
   onExportBackup,
   onImportBackup,
-  onResetToDemo
+  onResetToDemo,
+  supabaseConfig,
+  cloudSyncStatus,
+  onSaveSupabaseConfig,
+  onPushToCloud,
+  onPullFromCloud,
+  onInstallPwa
 }) {
   const { couple, categoryBudgets } = state;
+
+  const [cloudForm, setCloudForm] = useState({
+    url: supabaseConfig?.url || '',
+    anonKey: supabaseConfig?.anonKey || '',
+    coupleCode: supabaseConfig?.coupleCode || 'wesley-beatriz-2026',
+    autoSync: supabaseConfig?.autoSync !== false
+  });
+  const [showSqlGuide, setShowSqlGuide] = useState(false);
 
   const [coupleForm, setCoupleForm] = useState({
     partner1Name: couple.partner1Name || 'Wesley',
@@ -457,6 +472,165 @@ export default function SettingsView({
             <button type="submit" className="btn btn-primary">
               <i className="fa-solid fa-check"></i> Salvar Tetos de Orçamento
             </button>
+          </div>
+        </form>
+      </div>
+
+      {/* SINCRONIZAÇÃO EM NUVEM ENTRE CELULARES (SUPABASE CLOUD) & PWA */}
+      <div className="card">
+        <div className="card-header flex-between wrap" style={{ gap: '12px' }}>
+          <div>
+            <h3>
+              <i className="fa-solid fa-cloud-arrow-up text-emerald"></i> Sincronização em Nuvem
+              entre Celulares (Supabase Cloud) &amp; App PWA
+            </h3>
+            <p className="card-subtitle">
+              Conecte gratuitamente ao Supabase para manter os celulares de {couple.partner1Name} e{' '}
+              {couple.partner2Name} sincronizados em tempo real!
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {onInstallPwa && (
+              <button type="button" className="btn btn-sm btn-soft" onClick={onInstallPwa}>
+                <i className="fa-solid fa-mobile-screen-button text-emerald"></i> Instalar App no
+                Celular (PWA)
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={() => setShowSqlGuide(!showSqlGuide)}
+            >
+              <i className="fa-solid fa-code"></i>{' '}
+              {showSqlGuide ? 'Ocultar Script SQL' : 'Ver Script SQL (30s)'}
+            </button>
+          </div>
+        </div>
+
+        {showSqlGuide && (
+          <div
+            className="installment-plan-box"
+            style={{ marginBottom: '16px', background: 'var(--bg-main)' }}
+          >
+            <div className="flex-between wrap" style={{ marginBottom: '8px' }}>
+              <strong>
+                <i className="fa-solid fa-database text-emerald"></i> Passo Único no Supabase (SQL
+                Editor):
+              </strong>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => {
+                  if (navigator.clipboard) {
+                    navigator.clipboard.writeText(SUPABASE_SQL_SETUP);
+                  }
+                }}
+              >
+                <i className="fa-regular fa-copy"></i> Copiar SQL
+              </button>
+            </div>
+            <pre
+              style={{
+                padding: '10px',
+                borderRadius: '8px',
+                background: '#0f172a',
+                color: '#e2e8f0',
+                fontSize: '11px',
+                overflowX: 'auto',
+                margin: 0
+              }}
+            >
+              {SUPABASE_SQL_SETUP}
+            </pre>
+          </div>
+        )}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (onSaveSupabaseConfig) onSaveSupabaseConfig(cloudForm);
+          }}
+        >
+          <div className="form-grid-3">
+            <div className="form-group">
+              <label htmlFor="sb-url">Supabase Project URL</label>
+              <input
+                id="sb-url"
+                type="url"
+                placeholder="https://seu-projeto.supabase.co"
+                value={cloudForm.url}
+                onChange={(e) => setCloudForm({ ...cloudForm, url: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="sb-key">Supabase Anon Public Key</label>
+              <input
+                id="sb-key"
+                type="password"
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..."
+                value={cloudForm.anonKey}
+                onChange={(e) => setCloudForm({ ...cloudForm, anonKey: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="sb-code">Código Secreto do Casal (Mesmo nos 2 Celulares)</label>
+              <input
+                id="sb-code"
+                type="text"
+                placeholder="Ex: wesley-beatriz-2026"
+                value={cloudForm.coupleCode}
+                onChange={(e) => setCloudForm({ ...cloudForm, coupleCode: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div
+            className="flex-between wrap"
+            style={{ marginTop: '14px', gap: '12px', alignItems: 'center' }}
+          >
+            <label className="checkbox-label" htmlFor="sb-autosync">
+              <input
+                id="sb-autosync"
+                type="checkbox"
+                checked={cloudForm.autoSync}
+                onChange={(e) => setCloudForm({ ...cloudForm, autoSync: e.target.checked })}
+              />
+              <span>
+                Sincronizar automaticamente em segundo plano sempre que qualquer dado for salvo
+              </span>
+            </label>
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button type="submit" className="btn btn-sm btn-outline">
+                <i className="fa-solid fa-floppy-disk"></i> Salvar Credenciais
+              </button>
+              {onPullFromCloud && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-soft"
+                  disabled={!isSupabaseConfigured(cloudForm) || cloudSyncStatus === 'syncing'}
+                  onClick={() => {
+                    if (onSaveSupabaseConfig) onSaveSupabaseConfig(cloudForm);
+                    onPullFromCloud(cloudForm);
+                  }}
+                >
+                  <i className="fa-solid fa-cloud-arrow-down"></i> Baixar da Nuvem
+                </button>
+              )}
+              {onPushToCloud && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={!isSupabaseConfigured(cloudForm) || cloudSyncStatus === 'syncing'}
+                  onClick={() => {
+                    if (onSaveSupabaseConfig) onSaveSupabaseConfig(cloudForm);
+                    onPushToCloud(cloudForm);
+                  }}
+                >
+                  <i className="fa-solid fa-cloud-arrow-up"></i> Enviar p/ Nuvem Agora
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>

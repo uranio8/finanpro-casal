@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { formatCurrency, formatDateBR } from '../utils/formatters';
+import React, { useState, useMemo } from 'react';
+import { formatCurrency, formatDateBR, shiftYearMonth, getMonthLabel } from '../utils/formatters';
 
 export default function GoalsAndChecklistView({
   state,
@@ -32,7 +32,38 @@ export default function GoalsAndChecklistView({
 
   const [newTaskByGroup, setNewTaskByGroup] = useState({});
 
-  const { goals, checklist, couple } = state;
+  const { goals, checklist, couple, transactions = [], selectedMonth = '2026-11' } = state;
+
+  // Cálculo de Alívio de Caixa Futuro (parcelamentos que terminam nos próximos 3 meses)
+  const cashReliefInfo = useMemo(() => {
+    const futureYm = shiftYearMonth(selectedMonth, 3);
+    const currentInstallmentLoad = transactions
+      .filter(
+        (t) =>
+          t.type === 'expense' &&
+          t.commitmentId &&
+          t.dueDate &&
+          t.dueDate.startsWith(selectedMonth)
+      )
+      .reduce((a, t) => a + Number(t.amount || 0), 0);
+
+    const futureInstallmentLoad = transactions
+      .filter(
+        (t) =>
+          t.type === 'expense' &&
+          t.commitmentId &&
+          t.dueDate &&
+          t.dueDate.startsWith(futureYm)
+      )
+      .reduce((a, t) => a + Number(t.amount || 0), 0);
+
+    const monthlyRelief = Math.max(0, currentInstallmentLoad - futureInstallmentLoad);
+    return {
+      futureYm,
+      futureLabel: getMonthLabel(futureYm),
+      monthlyRelief
+    };
+  }, [transactions, selectedMonth]);
 
   const handleDeleteGoalClick = (goal) => {
     if (
@@ -187,6 +218,32 @@ export default function GoalsAndChecklistView({
               : 0;
           const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
 
+          // Projeção Inteligente ("Quando vamos atingir a meta?")
+          const [selY, selM] = (selectedMonth || '2026-11').split('-').map(Number);
+          const [deadY, deadM] = (goal.deadline || '2027-06-30')
+            .slice(0, 7)
+            .split('-')
+            .map(Number);
+          const monthsUntilDeadline = Math.max(
+            1,
+            (deadY - selY) * 12 + (deadM - selM)
+          );
+          const requiredMonthlyDeposit =
+            remaining > 0 ? remaining / monthsUntilDeadline : 0;
+
+          const activeGoalsCount = Math.max(
+            1,
+            goals.filter((g) => Number(g.targetAmount) > Number(g.currentAmount)).length
+          );
+          const pacePerGoal =
+            Number(couple?.monthlySavingsTarget || 2500) / activeGoalsCount;
+          const monthsAtCouplePace =
+            remaining > 0 && pacePerGoal > 0 ? Math.ceil(remaining / pacePerGoal) : 0;
+          const estimatedCompletionYm =
+            remaining > 0
+              ? shiftYearMonth(selectedMonth, Math.max(1, monthsAtCouplePace))
+              : selectedMonth;
+
           return (
             <div key={goal.id} className="goal-card card">
               <div className="goal-top">
@@ -242,6 +299,54 @@ export default function GoalsAndChecklistView({
                   className="progress-bar-fill"
                   style={{ width: `${pct}%`, backgroundColor: goal.color }}
                 />
+              </div>
+
+              {/* PROJEÇÃO INTELIGENTE DA CAIXINHA */}
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  background: 'var(--bg-main)',
+                  border: '1px dashed var(--border-color)',
+                  fontSize: '12px'
+                }}
+              >
+                {remaining <= 0 ? (
+                  <div className="text-emerald" style={{ fontWeight: 700 }}>
+                    🎉 Meta 100% atingida! Parabéns ao casal!
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex-between" style={{ marginBottom: '3px' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        <i className="fa-solid fa-bullseye text-emerald"></i> Aporte p/ bater no prazo ({monthsUntilDeadline}m):
+                      </span>
+                      <strong>{formatCurrency(requiredMonthlyDeposit)}/mês</strong>
+                    </div>
+                    <div className="flex-between">
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        <i className="fa-solid fa-rocket" style={{ color: 'var(--primary)' }}></i> Previsão no ritmo atual:
+                      </span>
+                      <strong>
+                        {getMonthLabel(estimatedCompletionYm)} (~{monthsAtCouplePace}m)
+                      </strong>
+                    </div>
+                    {cashReliefInfo.monthlyRelief > 0 && (
+                      <small
+                        style={{
+                          display: 'block',
+                          marginTop: '4px',
+                          color: 'var(--primary)',
+                          fontWeight: 600
+                        }}
+                      >
+                        💡 A partir de {cashReliefInfo.futureLabel}, o fim de parcelas libera +
+                        {formatCurrency(cashReliefInfo.monthlyRelief)}/mês p/ acelerar!
+                      </small>
+                    )}
+                  </>
+                )}
               </div>
 
               <div className="goal-footer">

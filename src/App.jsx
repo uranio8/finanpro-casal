@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { INITIAL_STATE, CATEGORIES, INCOME_CATEGORIES } from './data/initialState';
 import {
   formatCurrency,
@@ -6,8 +6,16 @@ import {
   shiftYearMonth,
   getEffectiveMonthIncome,
   buildSafeDueDate,
+  isAutoSalaryTransaction,
   syncMonthIncomeAndTitheTransactions
 } from './utils/formatters';
+import {
+  getSupabaseConfig,
+  saveSupabaseConfig,
+  isSupabaseConfigured,
+  pushStateToSupabase,
+  pullStateFromSupabase
+} from './utils/supabaseSync';
 import DashboardView from './components/DashboardView';
 import CommitmentsView from './components/CommitmentsView';
 import TransactionsView from './components/TransactionsView';
@@ -16,6 +24,7 @@ import CardsView from './components/CardsView';
 import GoalsAndChecklistView from './components/GoalsAndChecklistView';
 import CoupleSplitView from './components/CoupleSplitView';
 import SettingsView from './components/SettingsView';
+import ReportPrintModal from './components/ReportPrintModal';
 
 const STORAGE_KEY = 'finanpro_couple_state_v1';
 
@@ -90,7 +99,7 @@ export default function App() {
         const baseLoadedState = {
           ...INITIAL_STATE,
           ...parsed,
-          version: '1.5.0',
+          version: '2.0.0',
           couple: {
             ...INITIAL_STATE.couple,
             ...(parsed.couple || {}),
@@ -103,6 +112,7 @@ export default function App() {
           transactions: migratedTransactions,
           commitments: migratedCommitments,
           monthlyIncomes: migratedMonthlyIncomes,
+          monthlySettlements: parsed.monthlySettlements || {},
           categoryBudgets: {
             ...INITIAL_STATE.categoryBudgets,
             ...(parsed.categoryBudgets || {})
@@ -136,9 +146,21 @@ export default function App() {
   const [activeRoute, setActiveRoute] = useState('dashboard');
   const [fabOpen, setFabOpen] = useState(false);
   const [toast, setToast] = useState(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-  // Global Modal for New Transaction (Expense or Income)
-  const [txModal, setTxModal] = useState({ open: false, type: 'expense' });
+  // Supabase Cloud Sync & PWA State
+  const [supabaseConfig, setSupabaseConfig] = useState(() => getSupabaseConfig());
+  const [cloudSyncStatus, setCloudSyncStatus] = useState('idle'); // 'idle' | 'syncing' | 'synced' | 'error'
+  const [deferredPwaPrompt, setDeferredPwaPrompt] = useState(null);
+  const skipNextAutoPushRef = useRef(false);
+
+  // Global Modal for New or Edited Transaction (Expense or Income)
+  const [txModal, setTxModal] = useState({
+    open: false,
+    type: 'expense',
+    editingId: null,
+    commitmentId: null
+  });
   const [externalCommitmentModal, setExternalCommitmentModal] = useState(false);
 
   const defaultCard = state.cards[0] || { id: 'card-inter', dueDay: 15, owner: 'partner1' };
@@ -153,7 +175,8 @@ export default function App() {
     owner: 'joint',
     paidBy: defaultCard.owner === 'partner2' ? 'partner2' : 'partner1',
     paymentMethod: 'Cartão de Crédito',
-    cardId: defaultCard.id
+    cardId: defaultCard.id,
+    propagateToPendingInstallments: true
   });
 
   const showToast = (msg) => {
@@ -161,7 +184,29 @@ export default function App() {
     setTimeout(() => setToast(null), 3400);
   };
 
-  // Sync to localStorage & apply theme class to <body>
+  // Capture PWA beforeinstallprompt event
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferredPwaPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallPwa = async () => {
+    if (!deferredPwaPrompt) {
+      showToast(
+        'Para instalar no celular: abra o menu do navegador e toque em "Adicionar à Tela de Início"! 📲'
+      );
+      return;
+    }
+    deferredPwaPrompt.prompt();
+    await deferredPwaPrompt.userChoice;
+    setDeferredPwaPrompt(null);
+  };
+
+  // Sync to localStorage, apply theme class & optional auto-sync to Supabase
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -169,7 +214,75 @@ export default function App() {
       console.error('Erro ao salvar localStorage:', e);
     }
     document.body.className = state.couple?.theme || 'theme-emerald';
+
+    if (skipNextAutoPushRef.current) {
+      skipNextAutoPushRef.current = false;
+      return;
+    }
+
+    if (isSupabaseConfigured(supabaseConfig) && supabaseConfig.autoSync) {
+      setCloudSyncStatus('syncing');
+      const timer = setTimeout(async () => {
+        const res = await pushStateToSupabase(state, supabaseConfig);
+        if (res.ok) {
+          setCloudSyncStatus('synced');
+          setSupabaseConfig((prev) => ({ ...prev, lastSyncAt: res.syncedAt }));
+        } else {
+          setCloudSyncStatus('error');
+        }
+      }, 1400);
+      return () => clearTimeout(timer);
+    }
   }, [state]);
+
+  const handleSaveSupabaseConfig = (newCfg) => {
+    const saved = saveSupabaseConfig(newCfg);
+    setSupabaseConfig(saved);
+    showToast('Configuração de nuvem (Supabase) salva!');
+  };
+
+  const handlePushToCloud = async (customCfg) => {
+    const cfgToUse = customCfg || supabaseConfig;
+    if (!isSupabaseConfigured(cfgToUse)) {
+      showToast('Preencha a URL, Anon Key e Código do Casal primeiro.');
+      return { ok: false };
+    }
+    setCloudSyncStatus('syncing');
+    const res = await pushStateToSupabase(state, cfgToUse);
+    if (res.ok) {
+      setCloudSyncStatus('synced');
+      setSupabaseConfig(getSupabaseConfig());
+      showToast('Dados sincronizados na nuvem com sucesso! ☁️✨');
+    } else {
+      setCloudSyncStatus('error');
+      showToast('Falha ao enviar para o Supabase. Verifique a tabela e chaves.');
+    }
+    return res;
+  };
+
+  const handlePullFromCloud = async (customCfg) => {
+    const cfgToUse = customCfg || supabaseConfig;
+    if (!isSupabaseConfigured(cfgToUse)) {
+      showToast('Preencha a URL, Anon Key e Código do Casal primeiro.');
+      return { ok: false };
+    }
+    setCloudSyncStatus('syncing');
+    const res = await pullStateFromSupabase(cfgToUse);
+    if (res.ok && res.payload) {
+      skipNextAutoPushRef.current = true;
+      handleImportBackup(res.payload);
+      setCloudSyncStatus('synced');
+      setSupabaseConfig(getSupabaseConfig());
+      showToast('Dados atualizados a partir da nuvem! 📲☁️');
+    } else if (res.ok && res.empty) {
+      setCloudSyncStatus('idle');
+      showToast('Nenhum dado encontrado para este Código do Casal ainda. Envie primeiro!');
+    } else {
+      setCloudSyncStatus('error');
+      showToast('Erro ao buscar dados da nuvem.');
+    }
+    return res;
+  };
 
   // Navegação de Mês na Sidebar garantindo sincronização de Salários e Primícias para qualquer mês passado ou futuro
   const handleNavigateMonth = (delta) => {
@@ -206,10 +319,34 @@ export default function App() {
       owner: type === 'income' ? 'partner1' : 'joint',
       paidBy: chosenCard.owner === 'partner2' ? 'partner2' : 'partner1',
       paymentMethod: isExpense ? 'Cartão de Crédito' : 'PIX',
-      cardId: isExpense ? chosenCard.id : ''
+      cardId: isExpense ? chosenCard.id : '',
+      propagateToPendingInstallments: false
     });
-    setTxModal({ open: true, type });
+    setTxModal({ open: true, type, editingId: null, commitmentId: null });
     setFabOpen(false);
+  };
+
+  const handleOpenEditTransaction = (tx) => {
+    if (!tx) return;
+    setTxForm({
+      title: tx.title || '',
+      type: tx.type || 'expense',
+      category: tx.category || (tx.type === 'income' ? 'extra' : 'outros'),
+      amount: tx.amount ?? '',
+      dueDate: tx.dueDate || `${state.selectedMonth}-10`,
+      status: tx.status || 'pending',
+      owner: tx.owner || 'joint',
+      paidBy: tx.paidBy || 'partner1',
+      paymentMethod: tx.paymentMethod || (tx.cardId ? 'Cartão de Crédito' : 'PIX'),
+      cardId: tx.cardId || state.cards[0]?.id || '',
+      propagateToPendingInstallments: Boolean(tx.commitmentId)
+    });
+    setTxModal({
+      open: true,
+      type: tx.type || 'expense',
+      editingId: tx.id,
+      commitmentId: tx.commitmentId || null
+    });
   };
 
   const handleSelectCardInTxModal = (newCardId) => {
@@ -234,11 +371,101 @@ export default function App() {
     if (!txForm.title.trim() || amountNum <= 0) return;
 
     const chosenCard = state.cards.find((c) => c.id === txForm.cardId);
+    const effectiveCardId =
+      txForm.type === 'expense' && txForm.paymentMethod === 'Cartão de Crédito'
+        ? txForm.cardId
+        : '';
 
+    if (txModal.editingId) {
+      setState((prev) => {
+        const commId = txModal.commitmentId;
+        const shouldPropagate = Boolean(commId && txForm.propagateToPendingInstallments);
+
+        const updatedTransactions = prev.transactions.map((t) => {
+          if (t.id === txModal.editingId) {
+            return {
+              ...t,
+              title: txForm.title.trim(),
+              type: txForm.type,
+              category: txForm.category,
+              amount: amountNum,
+              dueDate: txForm.dueDate,
+              status: txForm.status,
+              paidDate: txForm.status === 'paid' ? t.paidDate || txForm.dueDate : '',
+              owner: txForm.owner,
+              paidBy: txForm.paidBy,
+              paymentMethod: txForm.paymentMethod,
+              cardId: effectiveCardId
+            };
+          }
+          if (shouldPropagate && t.commitmentId === commId && t.status === 'pending') {
+            const ym = t.dueDate ? t.dueDate.slice(0, 7) : prev.selectedMonth;
+            const nextDueDate =
+              effectiveCardId && chosenCard
+                ? buildSafeDueDate(ym, chosenCard.dueDay || 15)
+                : t.dueDate;
+            return {
+              ...t,
+              title: t.installmentNumber === 0 ? `${txForm.title.trim()} (Entrada)` : txForm.title.trim(),
+              category: txForm.category,
+              owner: txForm.owner,
+              paidBy: txForm.paidBy,
+              paymentMethod: txForm.paymentMethod,
+              cardId: effectiveCardId,
+              dueDate: nextDueDate
+            };
+          }
+          return t;
+        });
+
+        let updatedCommitments = prev.commitments;
+        if (commId) {
+          const linked = updatedTransactions
+            .filter((t) => t.commitmentId === commId)
+            .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+          const newTotal = Number(
+            linked.reduce((acc, t) => acc + Number(t.amount || 0), 0).toFixed(2)
+          );
+          const newEnd = linked.length > 0 ? linked[linked.length - 1].dueDate : undefined;
+
+          updatedCommitments = prev.commitments.map((c) =>
+            c.id === commId
+              ? {
+                  ...c,
+                  ...(shouldPropagate
+                    ? {
+                        title: txForm.title.trim(),
+                        category: txForm.category,
+                        owner: txForm.owner,
+                        paidBy: txForm.paidBy,
+                        paymentMethod: txForm.paymentMethod,
+                        cardId: effectiveCardId
+                      }
+                    : {}),
+                  totalAmount: newTotal,
+                  endDate: newEnd || c.endDate
+                }
+              : c
+          );
+        }
+
+        return {
+          ...prev,
+          transactions: updatedTransactions,
+          commitments: updatedCommitments
+        };
+      });
+
+      setTxModal({ open: false, type: 'expense', editingId: null, commitmentId: null });
+      showToast('Lançamento atualizado com sucesso! ✏️');
+      return;
+    }
+
+    const { propagateToPendingInstallments, ...cleanForm } = txForm;
     const newTx = {
       id: `tx-${Date.now()}`,
-      ...txForm,
-      cardId: txForm.paymentMethod === 'Cartão de Crédito' ? txForm.cardId : '',
+      ...cleanForm,
+      cardId: effectiveCardId,
       amount: amountNum,
       paidDate: txForm.status === 'paid' ? txForm.dueDate : ''
     };
@@ -248,7 +475,7 @@ export default function App() {
       transactions: [...prev.transactions, newTx]
     }));
 
-    setTxModal({ open: false, type: 'expense' });
+    setTxModal({ open: false, type: 'expense', editingId: null, commitmentId: null });
     showToast(
       txForm.type === 'income'
         ? 'Receita registrada com sucesso!'
@@ -256,6 +483,81 @@ export default function App() {
         ? `Gasto lançado na fatura do ${chosenCard.name}! 💳`
         : 'Despesa lançada com sucesso!'
     );
+  };
+
+  // Clonagem Automática de Contas Fixas do Mês Anterior (Luz, Água, Condomínio, Internet, Feira, etc.)
+  const handleClonePreviousMonthFixedExpenses = () => {
+    const targetYm = state.selectedMonth;
+    const prevYm = shiftYearMonth(targetYm, -1);
+
+    // Search previous month first; if empty, fallback to reference month '2026-11'
+    const candidateSourceTxs = state.transactions.filter(
+      (t) =>
+        t.type === 'expense' &&
+        t.category !== 'dizimo' &&
+        t.dueDate &&
+        t.dueDate.startsWith(prevYm) &&
+        (!t.commitmentId || t.paymentMethod !== 'Cartão de Crédito')
+    );
+
+    const sourceList =
+      candidateSourceTxs.length > 0
+        ? candidateSourceTxs
+        : state.transactions.filter(
+            (t) =>
+              t.type === 'expense' &&
+              t.category !== 'dizimo' &&
+              t.dueDate &&
+              t.dueDate.startsWith('2026-11') &&
+              (t.category === 'moradia' ||
+                t.category === 'assinaturas' ||
+                t.paymentMethod !== 'Cartão de Crédito')
+          );
+
+    const existingTitlesInTarget = new Set(
+      state.transactions
+        .filter((t) => t.dueDate && t.dueDate.startsWith(targetYm))
+        .map((t) => (t.title || '').trim().toLowerCase())
+    );
+
+    const clonedTxs = [];
+    sourceList.forEach((src, idx) => {
+      const normalizedTitle = (src.title || '').trim().toLowerCase();
+      if (!normalizedTitle || existingTitlesInTarget.has(normalizedTitle)) return;
+      existingTitlesInTarget.add(normalizedTitle);
+
+      const dayNum = Number(src.dueDate.slice(8, 10)) || 10;
+      clonedTxs.push({
+        id: `tx-clone-${targetYm}-${Date.now()}-${idx}`,
+        title: src.title,
+        type: 'expense',
+        category: src.category,
+        amount: Number(src.amount || 0),
+        dueDate: buildSafeDueDate(targetYm, dayNum),
+        paidDate: '',
+        status: 'pending',
+        owner: src.owner || 'joint',
+        paidBy: src.paidBy || 'partner1',
+        paymentMethod: src.paymentMethod || 'PIX',
+        cardId: src.paymentMethod === 'Cartão de Crédito' ? src.cardId : ''
+      });
+    });
+
+    if (clonedTxs.length === 0) {
+      showToast(
+        `Todas as contas fixas recorrentes já estão lançadas em ${getMonthLabel(targetYm)}! ✅`
+      );
+      return 0;
+    }
+
+    setState((prev) => ({
+      ...prev,
+      transactions: [...prev.transactions, ...clonedTxs]
+    }));
+    showToast(
+      `${clonedTxs.length} conta(s) fixa(s) clonada(s) para ${getMonthLabel(targetYm)} como Pendentes! ⚡`
+    );
+    return clonedTxs.length;
   };
 
   const handleQuickPayTransaction = (txId) => {
@@ -521,6 +823,175 @@ export default function App() {
       transactions: prev.transactions.filter((t) => t.commitmentId !== commId)
     }));
     showToast('Parcelamento e parcelas vinculadas excluídos.');
+  };
+
+  // Edição completa de Parcelamento / Conta Fixa existente
+  const handleUpdateCommitment = (commId, updates) => {
+    setState((prev) => {
+      const targetCard =
+        updates.paymentMethod === 'Cartão de Crédito'
+          ? prev.cards.find((c) => c.id === updates.cardId)
+          : null;
+      const effectiveCardId =
+        updates.paymentMethod === 'Cartão de Crédito' ? updates.cardId || '' : '';
+      const newPendingInstallmentAmount =
+        updates.pendingInstallmentAmount !== undefined &&
+        Number(updates.pendingInstallmentAmount) > 0
+          ? Number(updates.pendingInstallmentAmount)
+          : null;
+
+      const updatedTransactions = prev.transactions.map((t) => {
+        if (t.commitmentId !== commId) return t;
+        const isDownPayment = t.installmentNumber === 0;
+        const isPending = t.status === 'pending';
+        const ym = t.dueDate ? t.dueDate.slice(0, 7) : prev.selectedMonth;
+        const nextDueDate =
+          isPending && !isDownPayment && targetCard
+            ? buildSafeDueDate(ym, targetCard.dueDay || 15)
+            : t.dueDate;
+
+        return {
+          ...t,
+          title: isDownPayment ? `${updates.title} (Entrada)` : updates.title,
+          category: updates.category,
+          owner: updates.owner,
+          paidBy: isPending ? updates.paidBy : t.paidBy,
+          paymentMethod: isDownPayment ? t.paymentMethod : updates.paymentMethod,
+          cardId: isDownPayment ? '' : effectiveCardId,
+          dueDate: nextDueDate,
+          amount:
+            isPending && !isDownPayment && newPendingInstallmentAmount !== null
+              ? newPendingInstallmentAmount
+              : t.amount
+        };
+      });
+
+      const linkedAfter = updatedTransactions
+        .filter((t) => t.commitmentId === commId)
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      const newTotalAmount = Number(
+        linkedAfter.reduce((acc, t) => acc + Number(t.amount || 0), 0).toFixed(2)
+      );
+      const newEndDate =
+        linkedAfter.length > 0 ? linkedAfter[linkedAfter.length - 1].dueDate : undefined;
+
+      const updatedCommitments = prev.commitments.map((c) =>
+        c.id === commId
+          ? {
+              ...c,
+              title: updates.title,
+              category: updates.category,
+              owner: updates.owner,
+              paidBy: updates.paidBy,
+              paymentMethod: updates.paymentMethod,
+              cardId: effectiveCardId,
+              notes: updates.notes ?? c.notes,
+              totalAmount: newTotalAmount,
+              endDate: newEndDate || c.endDate
+            }
+          : c
+      );
+
+      return {
+        ...prev,
+        commitments: updatedCommitments,
+        transactions: updatedTransactions
+      };
+    });
+
+    showToast(`Contrato "${updates.title}" e parcelas pendentes atualizados! ✏️`);
+  };
+
+  // Antecipação de Parcelas com Desconto (Estilo Nubank / Inter)
+  const handleAnticipateInstallments = (
+    commId,
+    txIdsToAnticipate = [],
+    discountAmount = 0,
+    markAsPaid = true
+  ) => {
+    if (!commId || !Array.isArray(txIdsToAnticipate) || txIdsToAnticipate.length === 0) return;
+
+    const cleanDiscount = Math.max(0, Number(discountAmount) || 0);
+    const idSet = new Set(txIdsToAnticipate);
+
+    setState((prev) => {
+      const targetYm = prev.selectedMonth;
+      const targetTxs = prev.transactions.filter(
+        (t) => t.commitmentId === commId && idSet.has(t.id) && t.status === 'pending'
+      );
+      if (targetTxs.length === 0) return prev;
+
+      const count = targetTxs.length;
+      const baseDiscountPerTx =
+        count > 0 ? Math.floor((cleanDiscount / count) * 100) / 100 : 0;
+      let discountDistributedSoFar = 0;
+
+      const discountMap = {};
+      targetTxs.forEach((t, idx) => {
+        const isLast = idx === count - 1;
+        const disc = isLast
+          ? Number((cleanDiscount - discountDistributedSoFar).toFixed(2))
+          : baseDiscountPerTx;
+        discountDistributedSoFar += disc;
+        discountMap[t.id] = disc;
+      });
+
+      const updatedTransactions = prev.transactions.map((t) => {
+        if (!idSet.has(t.id) || t.commitmentId !== commId || t.status !== 'pending') {
+          return t;
+        }
+        const cardObj = prev.cards.find((c) => c.id === t.cardId);
+        const dayToUse = cardObj?.dueDay || Number(t.dueDate?.slice(8, 10)) || 15;
+        const newDueDate = buildSafeDueDate(targetYm, dayToUse);
+        const disc = discountMap[t.id] || 0;
+        const newAmount = Math.max(0.01, Number((Number(t.amount || 0) - disc).toFixed(2)));
+        const suffix = t.title.includes('(Antecipada)') ? '' : ' (Antecipada)';
+
+        return {
+          ...t,
+          title: `${t.title}${suffix}`,
+          amount: newAmount,
+          dueDate: newDueDate,
+          status: markAsPaid ? 'paid' : 'pending',
+          paidDate: markAsPaid ? newDueDate : ''
+        };
+      });
+
+      const linkedAfter = updatedTransactions
+        .filter((t) => t.commitmentId === commId)
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      const newTotalAmount = Number(
+        linkedAfter.reduce((acc, t) => acc + Number(t.amount || 0), 0).toFixed(2)
+      );
+      const newEndDate =
+        linkedAfter.length > 0 ? linkedAfter[linkedAfter.length - 1].dueDate : undefined;
+
+      const updatedCommitments = prev.commitments.map((c) =>
+        c.id === commId
+          ? {
+              ...c,
+              totalAmount: newTotalAmount,
+              endDate: newEndDate || c.endDate
+            }
+          : c
+      );
+
+      return {
+        ...prev,
+        commitments: updatedCommitments,
+        transactions: updatedTransactions
+      };
+    });
+
+    showToast(
+      cleanDiscount > 0
+        ? `${txIdsToAnticipate.length} parcela(s) antecipada(s) com economia de ${formatCurrency(
+            cleanDiscount
+          )}! ⚡🎉`
+        : `${txIdsToAnticipate.length} parcela(s) antecipada(s) para ${getMonthLabel(
+            state.selectedMonth
+          )}! ⚡`
+    );
   };
 
   const handleAddCard = (cardData) => {
@@ -816,6 +1287,53 @@ export default function App() {
     showToast('Checklist reiniciado para a nova rotina mensal! ✨');
   };
 
+  // Liquidação do Acerto Mensal do Casal com 1 Clique
+  const handleSettleMonthSplit = (yearMonth, settlementPayload) => {
+    const ym = yearMonth || state.selectedMonth;
+    const todayIso = new Date().toISOString().slice(0, 10);
+
+    setState((prev) => {
+      const updatedSettlements = {
+        ...(prev.monthlySettlements || {}),
+        [ym]: {
+          settled: true,
+          settledAt: todayIso,
+          ...settlementPayload
+        }
+      };
+
+      // Marca automaticamente a tarefa de fechamento/acerto no Checklist do Mês
+      const updatedChecklist = (prev.checklist || []).map((item) => {
+        const lower = (item.title || '').toLowerCase();
+        if (lower.includes('acerto') || lower.includes('fechamento') || item.id === 'chk-8') {
+          return { ...item, done: true };
+        }
+        return item;
+      });
+
+      return {
+        ...prev,
+        monthlySettlements: updatedSettlements,
+        checklist: updatedChecklist
+      };
+    });
+
+    showToast(`Acerto do casal de ${getMonthLabel(ym)} confirmado e marcado no Checklist! 🤝✨`);
+  };
+
+  const handleReopenMonthSplit = (yearMonth) => {
+    const ym = yearMonth || state.selectedMonth;
+    setState((prev) => {
+      const nextSettlements = { ...(prev.monthlySettlements || {}) };
+      delete nextSettlements[ym];
+      return {
+        ...prev,
+        monthlySettlements: nextSettlements
+      };
+    });
+    showToast(`Acerto de ${getMonthLabel(ym)} reaberto para ajustes.`);
+  };
+
   const handleUpdateCoupleSettings = (updates) => {
     setState((prev) => {
       const ym = prev.selectedMonth;
@@ -1050,6 +1568,39 @@ export default function App() {
           </div>
 
           <div className="topbar-right">
+            {isSupabaseConfigured(supabaseConfig) && (
+              <button
+                className="btn btn-sm btn-outline"
+                style={{ gap: '6px' }}
+                title="Status da Sincronização em Nuvem (Supabase). Clique para buscar atualizações."
+                onClick={() => handlePullFromCloud()}
+              >
+                <i
+                  className={`fa-solid ${
+                    cloudSyncStatus === 'syncing'
+                      ? 'fa-arrows-rotate fa-spin'
+                      : cloudSyncStatus === 'error'
+                      ? 'fa-triangle-exclamation text-amber'
+                      : 'fa-cloud-check text-emerald'
+                  }`}
+                ></i>{' '}
+                <span>
+                  {cloudSyncStatus === 'syncing'
+                    ? 'Sincronizando...'
+                    : cloudSyncStatus === 'error'
+                    ? 'Erro Nuvem'
+                    : 'Nuvem Ativa'}
+                </span>
+              </button>
+            )}
+            <button
+              className="btn btn-sm btn-outline"
+              style={{ gap: '6px' }}
+              title="Gerar Relatório de Fechamento Mensal ou Anual em PDF / Impressão"
+              onClick={() => setIsReportModalOpen(true)}
+            >
+              <i className="fa-solid fa-file-pdf text-emerald"></i> Relatório PDF
+            </button>
             <button
               className="btn btn-sm btn-outline"
               style={{ gap: '6px' }}
@@ -1084,6 +1635,7 @@ export default function App() {
             onOpenNewTransaction={handleOpenNewTransaction}
             onQuickPayTransaction={handleQuickPayTransaction}
             onOpenMonthIncomeModal={openMonthIncomeModal}
+            onOpenReportModal={() => setIsReportModalOpen(true)}
             onOpenCommitmentModal={() => {
               setActiveRoute('commitments');
               setExternalCommitmentModal(true);
@@ -1105,6 +1657,8 @@ export default function App() {
           <CommitmentsView
             state={state}
             onAddCommitment={handleAddCommitment}
+            onUpdateCommitment={handleUpdateCommitment}
+            onAnticipateInstallments={handleAnticipateInstallments}
             onDeleteCommitment={handleDeleteCommitment}
             onQuickPayTransaction={handleQuickPayTransaction}
             externalModalOpen={externalCommitmentModal}
@@ -1116,6 +1670,8 @@ export default function App() {
           <TransactionsView
             state={state}
             onOpenNewTransaction={handleOpenNewTransaction}
+            onOpenEditTransaction={handleOpenEditTransaction}
+            onClonePreviousMonthFixedExpenses={handleClonePreviousMonthFixedExpenses}
             onToggleTransactionStatus={handleToggleTransactionStatus}
             onDeleteTransaction={handleDeleteTransaction}
           />
@@ -1153,6 +1709,8 @@ export default function App() {
             state={state}
             onUpdateCoupleSettings={handleUpdateCoupleSettings}
             onOpenMonthIncomeModal={openMonthIncomeModal}
+            onSettleMonthSplit={handleSettleMonthSplit}
+            onReopenMonthSplit={handleReopenMonthSplit}
           />
         )}
 
@@ -1164,6 +1722,12 @@ export default function App() {
             onExportBackup={handleExportBackup}
             onImportBackup={handleImportBackup}
             onResetToDemo={handleResetToDemo}
+            supabaseConfig={supabaseConfig}
+            cloudSyncStatus={cloudSyncStatus}
+            onSaveSupabaseConfig={handleSaveSupabaseConfig}
+            onPushToCloud={handlePushToCloud}
+            onPullFromCloud={handlePullFromCloud}
+            onInstallPwa={handleInstallPwa}
           />
         )}
       </main>
@@ -1215,29 +1779,37 @@ export default function App() {
         </button>
       </div>
 
-      {/* MODAL GLOBAL: NOVA DESPESA OU RECEITA AVULSA */}
+      {/* MODAL GLOBAL: NOVA OU EDITAR DESPESA / RECEITA AVULSA */}
       {txModal.open && (
         <div
           className="modal-backdrop"
-          onClick={() => setTxModal({ open: false, type: 'expense' })}
+          onClick={() =>
+            setTxModal({ open: false, type: 'expense', editingId: null, commitmentId: null })
+          }
         >
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
                 <i
                   className={`fa-solid ${
-                    txForm.type === 'income'
+                    txModal.editingId
+                      ? 'fa-pen-to-square text-emerald'
+                      : txForm.type === 'income'
                       ? 'fa-arrow-trend-up text-emerald'
                       : 'fa-credit-card'
                   }`}
                 ></i>{' '}
-                {txForm.type === 'income'
+                {txModal.editingId
+                  ? 'Editar Lançamento Existente'
+                  : txForm.type === 'income'
                   ? 'Nova Receita / Entrada no Mês'
                   : 'Cadastrar Gasto (Cartão de Crédito / Pix)'}
               </h3>
               <button
                 className="close-btn"
-                onClick={() => setTxModal({ open: false, type: 'expense' })}
+                onClick={() =>
+                  setTxModal({ open: false, type: 'expense', editingId: null, commitmentId: null })
+                }
               >
                 <i className="fa-solid fa-xmark"></i>
               </button>
@@ -1437,21 +2009,56 @@ export default function App() {
                 )}
               </div>
 
+              {txModal.editingId && txModal.commitmentId && (
+                <div className="form-group" style={{ marginTop: '10px' }}>
+                  <label className="checkbox-label" htmlFor="tx-propagate-comm">
+                    <input
+                      id="tx-propagate-comm"
+                      type="checkbox"
+                      checked={Boolean(txForm.propagateToPendingInstallments)}
+                      onChange={(e) =>
+                        setTxForm({
+                          ...txForm,
+                          propagateToPendingInstallments: e.target.checked
+                        })
+                      }
+                    />
+                    <span>
+                      Propagar descrição, categoria, cartão e divisão para as demais parcelas
+                      pendentes deste parcelamento
+                    </span>
+                  </label>
+                </div>
+              )}
+
               <div className="modal-footer">
                 <button
                   type="button"
                   className="btn btn-outline"
-                  onClick={() => setTxModal({ open: false, type: 'expense' })}
+                  onClick={() =>
+                    setTxModal({
+                      open: false,
+                      type: 'expense',
+                      editingId: null,
+                      commitmentId: null
+                    })
+                  }
                 >
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  <i className="fa-solid fa-check"></i> Salvar Gasto
+                  <i className="fa-solid fa-check"></i>{' '}
+                  {txModal.editingId ? 'Salvar Alterações' : 'Salvar Gasto'}
                 </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* MODAL CENTRAL DE RELATÓRIOS MENSAL E ANUAL (PDF / IMPRESSÃO) */}
+      {isReportModalOpen && (
+        <ReportPrintModal state={state} onClose={() => setIsReportModalOpen(false)} />
       )}
 
       {/* MODAL: DEFINIR RENDA ESPECÍFICA DO MÊS */}

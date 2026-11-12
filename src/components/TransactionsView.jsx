@@ -9,6 +9,8 @@ import {
 export default function TransactionsView({
   state,
   onOpenNewTransaction,
+  onOpenEditTransaction,
+  onClonePreviousMonthFixedExpenses,
   onToggleTransactionStatus,
   onDeleteTransaction
 }) {
@@ -135,7 +137,16 @@ export default function TransactionsView({
             <strong>{getMonthLabel(selectedMonth)}</strong>. Clique em um dia do calendário para filtrar!
           </p>
         </div>
-        <div className="header-btns">
+        <div className="header-btns" style={{ flexWrap: 'wrap' }}>
+          {onClonePreviousMonthFixedExpenses && (
+            <button
+              className="btn btn-soft"
+              title="Copia automaticamente as contas fixas recorrentes (Luz, Água, Condomínio, Internet, etc.) do mês anterior para este mês como Pendentes"
+              onClick={onClonePreviousMonthFixedExpenses}
+            >
+              <i className="fa-solid fa-wand-magic-sparkles text-emerald"></i> Clonar Fixas do Mês Anterior
+            </button>
+          )}
           <button
             className="btn btn-outline"
             onClick={() => onOpenNewTransaction('income')}
@@ -420,6 +431,15 @@ export default function TransactionsView({
                           onClick={() => openConfirmPayModal(tx)}
                         >
                           <i className="fa-solid fa-receipt"></i> Quitar
+                        </button>
+                      )}
+                      {onOpenEditTransaction && (
+                        <button
+                          className="icon-btn"
+                          title="Editar Lançamento"
+                          onClick={() => onOpenEditTransaction(tx)}
+                        >
+                          <i className="fa-solid fa-pen-to-square"></i>
                         </button>
                       )}
                       <button

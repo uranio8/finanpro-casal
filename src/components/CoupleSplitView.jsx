@@ -1,13 +1,27 @@
 import React, { useMemo } from 'react';
 import {
   formatCurrency,
+  formatDateBR,
   getMonthLabel,
   getEffectiveMonthIncome,
   isAutoSalaryTransaction
 } from '../utils/formatters';
 
-export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenMonthIncomeModal }) {
-  const { couple, transactions, extraIncomes = [], selectedMonth } = state;
+export default function CoupleSplitView({
+  state,
+  onUpdateCoupleSettings,
+  onOpenMonthIncomeModal,
+  onSettleMonthSplit,
+  onReopenMonthSplit
+}) {
+  const {
+    couple,
+    transactions,
+    extraIncomes = [],
+    selectedMonth,
+    monthlySettlements = {}
+  } = state;
+  const activeSettlement = monthlySettlements[selectedMonth] || null;
 
   const monthTxs = useMemo(
     () => transactions.filter((t) => t.dueDate && t.dueDate.startsWith(selectedMonth)),
@@ -234,7 +248,7 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
           <div className="settlement-icon" style={{ backgroundColor: '#dcfce7', color: '#16a34a' }}>
             <i className="fa-solid fa-heart"></i>
           </div>
-          <div className="settlement-text">
+          <div className="settlement-text" style={{ flex: 1 }}>
             <span className="badge-pill badge-emerald">
               Modelo Orçamento Único / Sem Proporção Ativo
             </span>
@@ -246,13 +260,48 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
               são honradas juntos e todas as despesas da casa são pagas pelo casal. Todo o saldo restante pertence a ambos!
             </p>
           </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+            {activeSettlement?.settled ? (
+              <>
+                <span className="badge-pill badge-emerald">
+                  <i className="fa-solid fa-circle-check"></i> Fechamento Concluído em{' '}
+                  {formatDateBR(activeSettlement.settledAt)}
+                </span>
+                {onReopenMonthSplit && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={() => onReopenMonthSplit(selectedMonth)}
+                  >
+                    <i className="fa-solid fa-rotate-left"></i> Reabrir Mês
+                  </button>
+                )}
+              </>
+            ) : (
+              onSettleMonthSplit && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={() =>
+                    onSettleMonthSplit(selectedMonth, {
+                      mode: 'unified',
+                      amount: 0,
+                      freeBalance: familyFreeBalance
+                    })
+                  }
+                >
+                  <i className="fa-solid fa-check-double"></i> Confirmar Fechamento do Mês
+                </button>
+              )
+            )}
+          </div>
         </div>
       ) : (
         <div className="card settlement-banner">
           <div className="settlement-icon">
             <i className="fa-solid fa-handshake-simple"></i>
           </div>
-          <div className="settlement-text">
+          <div className="settlement-text" style={{ flex: 1 }}>
             <span className="badge-pill badge-emerald">
               Resultado do Acerto das Contas da Casa ({getMonthLabel(selectedMonth)})
             </span>
@@ -282,6 +331,42 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
                   : 'Divisão Igualitária (50% / 50%)'}
               </strong>
             </p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+            {activeSettlement?.settled ? (
+              <>
+                <span className="badge-pill badge-emerald">
+                  <i className="fa-solid fa-circle-check"></i> Acerto Quitado em{' '}
+                  {formatDateBR(activeSettlement.settledAt)}
+                </span>
+                {onReopenMonthSplit && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={() => onReopenMonthSplit(selectedMonth)}
+                  >
+                    <i className="fa-solid fa-rotate-left"></i> Reabrir Acerto
+                  </button>
+                )}
+              </>
+            ) : (
+              onSettleMonthSplit && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={() =>
+                    onSettleMonthSplit(selectedMonth, {
+                      mode: couple.splitMode,
+                      amount: Number(Math.abs(p1BalanceDiff).toFixed(2)),
+                      from: p1BalanceDiff > 0 ? 'partner2' : 'partner1',
+                      to: p1BalanceDiff > 0 ? 'partner1' : 'partner2'
+                    })
+                  }
+                >
+                  <i className="fa-solid fa-check-double"></i> Confirmar Acerto / PIX Realizado
+                </button>
+              )
+            )}
           </div>
         </div>
       )}
