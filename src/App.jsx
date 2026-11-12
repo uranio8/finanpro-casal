@@ -378,6 +378,7 @@ export default function App() {
 
     if (txModal.editingId) {
       setState((prev) => {
+        const originalTx = prev.transactions.find((t) => t.id === txModal.editingId);
         const commId = txModal.commitmentId;
         const shouldPropagate = Boolean(commId && txForm.propagateToPendingInstallments);
 
@@ -449,6 +450,38 @@ export default function App() {
           );
         }
 
+        // Se o usuário editou diretamente um Salário Mensal automático na tabela, sincronizar monthlyIncomes e recalcular Dízimo
+        if (originalTx && isAutoSalaryTransaction(originalTx)) {
+          const targetYm = (txForm.dueDate || originalTx.dueDate || prev.selectedMonth).slice(0, 7);
+          const currentEff = getEffectiveMonthIncome(prev, targetYm);
+          const isP2 = (txForm.owner || originalTx.owner) === 'partner2';
+          const updatedMonthIncome = {
+            partner1Income: isP2 ? currentEff.partner1Income : amountNum,
+            partner2Income: isP2 ? amountNum : currentEff.partner2Income,
+            donationAmount: currentEff.donationAmount
+          };
+          const nextState = {
+            ...prev,
+            couple:
+              targetYm === prev.selectedMonth
+                ? {
+                    ...prev.couple,
+                    ...(isP2 ? { partner2Income: amountNum } : { partner1Income: amountNum })
+                  }
+                : prev.couple,
+            monthlyIncomes: {
+              ...(prev.monthlyIncomes || {}),
+              [targetYm]: updatedMonthIncome
+            },
+            transactions: updatedTransactions,
+            commitments: updatedCommitments
+          };
+          return {
+            ...nextState,
+            transactions: syncMonthIncomeAndTitheTransactions(nextState, targetYm)
+          };
+        }
+
         return {
           ...prev,
           transactions: updatedTransactions,
@@ -490,28 +523,27 @@ export default function App() {
     const targetYm = state.selectedMonth;
     const prevYm = shiftYearMonth(targetYm, -1);
 
+    const isEligibleFixedExpense = (t) =>
+      t.type === 'expense' &&
+      t.category !== 'dizimo' &&
+      !t.commitmentId &&
+      t.installmentNumber !== 0 &&
+      !String(t.id || '').startsWith('tx-goal-') &&
+      (t.category === 'moradia' ||
+        t.category === 'assinaturas' ||
+        t.category === 'saude' ||
+        t.paymentMethod !== 'Cartão de Crédito');
+
     // Search previous month first; if empty, fallback to reference month '2026-11'
     const candidateSourceTxs = state.transactions.filter(
-      (t) =>
-        t.type === 'expense' &&
-        t.category !== 'dizimo' &&
-        t.dueDate &&
-        t.dueDate.startsWith(prevYm) &&
-        (!t.commitmentId || t.paymentMethod !== 'Cartão de Crédito')
+      (t) => t.dueDate && t.dueDate.startsWith(prevYm) && isEligibleFixedExpense(t)
     );
 
     const sourceList =
       candidateSourceTxs.length > 0
         ? candidateSourceTxs
         : state.transactions.filter(
-            (t) =>
-              t.type === 'expense' &&
-              t.category !== 'dizimo' &&
-              t.dueDate &&
-              t.dueDate.startsWith('2026-11') &&
-              (t.category === 'moradia' ||
-                t.category === 'assinaturas' ||
-                t.paymentMethod !== 'Cartão de Crédito')
+            (t) => t.dueDate && t.dueDate.startsWith('2026-11') && isEligibleFixedExpense(t)
           );
 
     const existingTitlesInTarget = new Set(

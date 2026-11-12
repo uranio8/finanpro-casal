@@ -16,7 +16,8 @@ import {
   getMonthLabel,
   getDaysDiffFromToday,
   getEffectiveMonthIncome,
-  isAutoSalaryTransaction
+  isAutoSalaryTransaction,
+  isAutoTitheOrDonationTransaction
 } from '../utils/formatters';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
@@ -277,6 +278,9 @@ export default function DashboardView({
     ];
     const values = months.map((label, idx) => {
       const ym = `${cashFlowYear}-${String(idx + 1).padStart(2, '0')}`;
+      const allMonthExpenses = transactions.filter(
+        (t) => t.type === 'expense' && t.dueDate && t.dueDate.startsWith(ym)
+      );
       const list = filteredTransactions.filter(
         (t) => t.type === 'expense' && t.dueDate && t.dueDate.startsWith(ym)
       );
@@ -285,8 +289,54 @@ export default function DashboardView({
         if (cashFlowFilter === 'pending') return t.status === 'pending';
         return true;
       });
-      const sum = filteredList.reduce((acc, t) => acc + Number(t.amount || 0), 0);
-      return { label, ym, sum };
+      let sum = filteredList.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+      // Se o mês possui compromissos ativos mas ainda não foi visitado na Sidebar (sem tx-diz materializado),
+      // somar a primícia prevista do mês para manter consistência 100% estável no gráfico anual
+      const hasMaterializedAutoTithe = allMonthExpenses.some((t) =>
+        isAutoTitheOrDonationTransaction(t)
+      );
+      if (couple.titheEnabled && !hasMaterializedAutoTithe && allMonthExpenses.length > 0) {
+        const isPastOrCurrentRef = ym <= '2026-11';
+        const autoStatus = isPastOrCurrentRef ? 'paid' : 'pending';
+        if (cashFlowFilter === 'all' || cashFlowFilter === autoStatus) {
+          const eff = getEffectiveMonthIncome(state, ym);
+          const tithePct = Number(couple.tithePercent ?? 10);
+          const p1OffPct = Number(couple.partner1OfferingPercent ?? 5);
+          const p2OffPct = Number(couple.partner2OfferingPercent ?? 5);
+          const mExtras = (extraIncomes || []).filter((i) => i.date?.startsWith(ym));
+          const p1Ex = couple.includeExtraInTithe
+            ? mExtras
+                .filter(
+                  (i) =>
+                    i.owner === 'partner1' &&
+                    i.status === 'received' &&
+                    i.applyTitheAndOffering !== false
+                )
+                .reduce((a, i) => a + Number(i.amount || 0), 0)
+            : 0;
+          const p2Ex = couple.includeExtraInTithe
+            ? mExtras
+                .filter(
+                  (i) =>
+                    i.owner === 'partner2' &&
+                    i.status === 'received' &&
+                    i.applyTitheAndOffering !== false
+                )
+                .reduce((a, i) => a + Number(i.amount || 0), 0)
+            : 0;
+          const p1TitheVal = Number(
+            (((eff.partner1Income + p1Ex) * (tithePct + p1OffPct)) / 100).toFixed(2)
+          );
+          const p2TitheVal = Number(
+            (((eff.partner2Income + p2Ex) * (tithePct + p2OffPct)) / 100).toFixed(2)
+          );
+          if (ownerFilter === 'all' || ownerFilter === 'partner1') sum += p1TitheVal;
+          if (ownerFilter === 'all' || ownerFilter === 'partner2') sum += p2TitheVal;
+        }
+      }
+
+      return { label, ym, sum: Number(sum.toFixed(2)) };
     });
 
     const activeMonths = values.filter((v) => v.sum > 0);
@@ -305,7 +355,7 @@ export default function DashboardView({
       avgActiveMonth,
       peakMonth
     };
-  }, [filteredTransactions, cashFlowYear, cashFlowFilter]);
+  }, [filteredTransactions, transactions, extraIncomes, couple, state, ownerFilter, cashFlowYear, cashFlowFilter]);
 
   const cashFlowChartData = {
     labels: monthlyCashFlow.months,

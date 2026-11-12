@@ -69,6 +69,27 @@ export function isAutoSalaryTransaction(tx) {
   return false;
 }
 
+export function isAutoTitheOrDonationTransaction(tx) {
+  if (!tx || tx.type !== 'expense' || tx.category !== 'dizimo') return false;
+  if (
+    tx.id === 'tx-diz-1' ||
+    tx.id === 'tx-diz-2' ||
+    (typeof tx.id === 'string' &&
+      (tx.id.startsWith('tx-diz-p1-') ||
+        tx.id.startsWith('tx-diz-p2-') ||
+        tx.id.startsWith('tx-don-')))
+  ) {
+    return true;
+  }
+  if (
+    typeof tx.title === 'string' &&
+    (tx.title.startsWith('Dízimo (') || tx.title.startsWith('Doações Especiais & Caridade —'))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function getDaysDiffFromToday(dateStr) {
   if (!dateStr) return null;
   const today = new Date('2026-11-11T00:00:00');

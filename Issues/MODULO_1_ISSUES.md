@@ -229,6 +229,19 @@
    * `Abr/2027`: Encerra a Geladeira Brastemp (`Parcela 8/8`). A partir de `Mai/2027`, a fatura do Nubank zera completamente.
    * `Ago/2027`: Encerram o Aluguel (`Parcela 12/12`) e a Internet (`Parcela 12/12`).
    * `Set/2027`: Zero compromissos restantes do ciclo inicial de 12 meses.
-4. **Cascata e Ações Cruzadas:**
+### 4. **Cascata e Ações Cruzadas:**
    * Adiantamento de parcela futura atualiza o progresso em *Parcelados & Fixas* sem corromper o mês corrente.
    * Mudança de dia de vencimento de cartão propaga perfeitamente o prazo final de todas as parcelas pendentes.
+
+---
+
+## 🚀 Auditoria Automatizada Pós-Atualização v2.0 (Casos de Borda & Fluxo de Dados)
+
+* **Data da Execução:** 12/11/2026 (Execução 100% Headless / Segundo Plano)
+* **Resultado:** **18 blocos de testes automatizados (`T01` a `T18`) — 18 APROVADOS (0 Falhas)**
+
+### Checklist de Refinamento Pós-v2.0 (Módulo 1)
+- [x] **`ISSUE-M1-V2-01` (Sincronia Salário ↔ Lançamentos):** Editar uma linha de Salário Mensal automático (`tx-inc-1`, `tx-inc-2`, `tx-inc-p1-YYYY-MM`, `tx-inc-p2-YYYY-MM`) diretamente pelo botão `✏️` em `TransactionsView.jsx` agora sincroniza `monthlyIncomes[YYYY-MM]` (e `couple` no mês corrente) e executa `syncMonthIncomeAndTitheTransactions`, recalculando o Dízimo/Oferta e mantendo Dashboard, Divisão do Casal e Relatório PDF 100% alinhados.
+- [x] **`ISSUE-M1-V2-02` (Filtro Inteligente na Clonagem de Contas Fixas):** `handleClonePreviousMonthFixedExpenses` em `src/App.jsx` agora exclui da clonagem automática transações vinculadas a compromissos parcelados (`Boolean(t.commitmentId)`), entradas iniciais (`t.installmentNumber === 0`) e aportes em caixinhas (`tx-goal-*`), clonando apenas contas fixas/mensais recorrentes elegíveis sem gerar duplicatas nem órfãos.
+- [x] **`ISSUE-M1-V2-03` (Estabilidade do Gráfico Anual de Fluxo de Caixa):** `monthlyCashFlow` em `src/components/DashboardView.jsx` agora projeta as Primícias previstas nos meses ativos do ano que ainda não foram visitados na Sidebar, garantindo que as barras do gráfico anual mantenham exatamente o mesmo valor antes e depois de o usuário navegar pelos meses.
+- [x] **`ISSUE-M1-V2-04` (Paridade de Ofertas Manuais no Relatório PDF):** `computeMonthSummary` em `src/components/ReportPrintModal.jsx` utiliza `isAutoTitheOrDonationTransaction(tx)` (`src/utils/formatters.js`) para somar eventuais ofertas/doações avulsas lançadas manualmente na categoria `'dizimo'` ao total de Primícias, mantendo paridade exata de 100% entre o Saldo Livre do Dashboard e do PDF.

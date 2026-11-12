@@ -5,7 +5,8 @@ import {
   formatDateBR,
   getMonthLabel,
   getEffectiveMonthIncome,
-  isAutoSalaryTransaction
+  isAutoSalaryTransaction,
+  isAutoTitheOrDonationTransaction
 } from '../utils/formatters';
 
 export default function ReportPrintModal({ state, onClose }) {
@@ -78,11 +79,14 @@ export default function ReportPrintModal({ state, onClose }) {
     const p2Consecrated = Number(
       (((eff.partner2Income + p2ExtraTithe) * (tithePct + p2OffPct)) / 100).toFixed(2)
     );
+    const monthExpenses = monthTxs.filter((t) => t.type === 'expense');
+    const manualTitheTotal = monthExpenses
+      .filter((t) => t.category === 'dizimo' && !isAutoTitheOrDonationTransaction(t))
+      .reduce((a, t) => a + Number(t.amount || 0), 0);
     const totalPrimicias = Number(
-      (p1Consecrated + p2Consecrated + Number(eff.donationAmount || 0)).toFixed(2)
+      (p1Consecrated + p2Consecrated + Number(eff.donationAmount || 0) + manualTitheTotal).toFixed(2)
     );
 
-    const monthExpenses = monthTxs.filter((t) => t.type === 'expense');
     const nonTitheExpenses = monthExpenses.filter((t) => t.category !== 'dizimo');
     const regularExpensesTotal = nonTitheExpenses.reduce(
       (a, t) => a + Number(t.amount || 0),
@@ -508,3 +512,4 @@ export default function ReportPrintModal({ state, onClose }) {
     </div>
   );
 }
+
