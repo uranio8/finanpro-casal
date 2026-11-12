@@ -281,11 +281,11 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings }) {
           <thead>
             <tr>
               <th>Despesa da Casa</th>
-              <th>Valor Total</th>
-              <th>Parte de {couple.partner1Name}</th>
-              <th>Parte de {couple.partner2Name}</th>
-              <th>Pago por</th>
-              <th>Status</th>
+              <th className="text-center">Valor Total</th>
+              <th className="text-center">Parte de {couple.partner1Name}</th>
+              <th className="text-center">Parte de {couple.partner2Name}</th>
+              <th className="text-center">Pago por</th>
+              <th className="text-center">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -294,17 +294,27 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings }) {
                 <td>
                   <strong>{tx.title}</strong>
                 </td>
-                <td>
-                  <strong>{formatCurrency(tx.amount)}</strong>
+                <td className="text-center">
+                  <strong className="font-mono-val">{formatCurrency(tx.amount)}</strong>
                 </td>
-                <td>{formatCurrency(tx.amount * p1ShareRatio)}</td>
-                <td>{formatCurrency(tx.amount * p2ShareRatio)}</td>
-                <td>
-                  <span className="method-pill">
+                <td className="text-center font-mono-val" style={{ color: 'var(--text-secondary)' }}>
+                  {formatCurrency(tx.amount * p1ShareRatio)}
+                </td>
+                <td className="text-center font-mono-val" style={{ color: 'var(--text-secondary)' }}>
+                  {formatCurrency(tx.amount * p2ShareRatio)}
+                </td>
+                <td className="text-center">
+                  <span
+                    className="owner-badge"
+                    style={{
+                      backgroundColor: tx.paidBy === 'partner1' ? '#dbeafe' : '#fce7f3',
+                      color: tx.paidBy === 'partner1' ? '#1d4ed8' : '#be185d'
+                    }}
+                  >
                     {tx.paidBy === 'partner1' ? couple.partner1Name : couple.partner2Name}
                   </span>
                 </td>
-                <td>
+                <td className="text-center">
                   <span className={`status-tag ${tx.status}`}>
                     {tx.status === 'paid' ? 'Pago' : 'A Pagar'}
                   </span>

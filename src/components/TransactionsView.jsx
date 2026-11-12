@@ -289,14 +289,14 @@ export default function TransactionsView({
         <table className="data-table">
           <thead>
             <tr>
-              <th>Vencimento</th>
+              <th className="text-center">Vencimento</th>
               <th>Descrição</th>
               <th>Categoria</th>
-              <th>Divisão</th>
-              <th>Onde foi feito (Cartão / Meio)</th>
-              <th>Valor</th>
-              <th>Status (Clique Rápido)</th>
-              <th>Ações</th>
+              <th className="text-center">Divisão</th>
+              <th className="text-center">Onde foi feito (Cartão / Meio)</th>
+              <th className="text-center">Valor</th>
+              <th className="text-center">Status (Clique Rápido)</th>
+              <th className="text-center">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -307,8 +307,8 @@ export default function TransactionsView({
 
               return (
                 <tr key={tx.id}>
-                  <td>
-                    <strong>{formatDateBR(tx.dueDate)}</strong>
+                  <td className="text-center">
+                    <strong className="font-mono-val">{formatDateBR(tx.dueDate)}</strong>
                   </td>
                   <td>
                     <div className="cell-title-with-icon">
@@ -332,7 +332,7 @@ export default function TransactionsView({
                     </div>
                   </td>
                   <td>{cat.name}</td>
-                  <td>
+                  <td className="text-center">
                     <span className={`owner-badge ${tx.owner}`}>
                       {tx.owner === 'joint'
                         ? 'Conjunto (Casa)'
@@ -341,29 +341,39 @@ export default function TransactionsView({
                         : couple.partner2Name}
                     </span>
                   </td>
-                  <td>
+                  <td className="text-center">
                     {cardObj ? (
                       <span
                         className="method-pill"
                         style={{
                           borderColor: cardObj.color,
                           color: cardObj.color,
+                          backgroundColor: `${cardObj.color}15`,
                           fontWeight: 700
                         }}
                       >
-                        <i className="fa-solid fa-credit-card"></i> {cardObj.name}
+                        <i className="fa-solid fa-credit-card"></i>{' '}
+                        {cardObj.name.includes('Inter')
+                          ? 'Inter Platinum'
+                          : cardObj.name.includes('Nubank')
+                          ? 'Nubank Chroma'
+                          : cardObj.name}
                       </span>
                     ) : (
                       <span className="method-pill">{tx.paymentMethod || 'PIX'}</span>
                     )}
                   </td>
-                  <td>
-                    <strong className={tx.type === 'income' ? 'text-emerald' : ''}>
+                  <td className="text-center">
+                    <strong
+                      className={`font-mono-val ${
+                        tx.type === 'income' ? 'text-emerald' : ''
+                      }`}
+                    >
                       {tx.type === 'income' ? '+ ' : ''}
                       {formatCurrency(tx.amount)}
                     </strong>
                   </td>
-                  <td>
+                  <td className="text-center">
                     <button
                       className={`status-toggle-btn ${tx.status}`}
                       title="Clique para alternar entre Pago e Pendente"
@@ -386,7 +396,7 @@ export default function TransactionsView({
                         : 'Pendente'}
                     </button>
                   </td>
-                  <td>
+                  <td className="text-center">
                     <div className="row-actions">
                       {tx.status === 'pending' && tx.type === 'expense' && (
                         <button

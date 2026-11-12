@@ -341,14 +341,14 @@ export default function CommitmentsView({
           <thead>
             <tr>
               <th>Compromisso / Descrição</th>
-              <th>Divisão</th>
-              <th>Valor Total</th>
-              <th>Já Pago</th>
-              <th>Falta Pagar</th>
-              <th>Onde Foi Feito (Cartão / Meio)</th>
-              <th>Última Parcela (Prazo)</th>
-              <th>Progresso</th>
-              <th>Ações</th>
+              <th className="text-center">Divisão</th>
+              <th className="text-center">Valor Total</th>
+              <th className="text-center">Já Pago</th>
+              <th className="text-center">Falta Pagar</th>
+              <th className="text-center">Onde Foi Feito (Cartão / Meio)</th>
+              <th className="text-center">Última Parcela (Prazo)</th>
+              <th className="text-center">Progresso</th>
+              <th className="text-center">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -373,7 +373,7 @@ export default function CommitmentsView({
                       </div>
                     </div>
                   </td>
-                  <td>
+                  <td className="text-center">
                     <span className={`owner-badge ${item.owner}`}>
                       {item.owner === 'joint'
                         ? 'Casal (Casa)'
@@ -382,42 +382,50 @@ export default function CommitmentsView({
                         : couple.partner2Name}
                     </span>
                   </td>
-                  <td>
-                    <strong>{formatCurrency(item.totalScheduled)}</strong>
+                  <td className="text-center">
+                    <strong className="font-mono-val">{formatCurrency(item.totalScheduled)}</strong>
                   </td>
-                  <td className="text-emerald">
-                    <strong>{formatCurrency(item.totalPaid)}</strong>
+                  <td className="text-center text-emerald">
+                    <strong className="font-mono-val">{formatCurrency(item.totalPaid)}</strong>
                   </td>
-                  <td className="text-amber">
-                    <strong>{formatCurrency(item.remaining)}</strong>
+                  <td className="text-center text-amber">
+                    <strong className="font-mono-val">{formatCurrency(item.remaining)}</strong>
                   </td>
-                  <td>
+                  <td className="text-center">
                     {item.cardObj ? (
-                      <span
-                        className="method-pill"
-                        style={{
-                          borderColor: item.cardObj.color,
-                          color: item.cardObj.color,
-                          fontWeight: 700
-                        }}
-                      >
-                        <i className="fa-solid fa-credit-card"></i> {item.cardObj.name} (Vence dia{' '}
-                        {item.cardObj.dueDay})
-                      </span>
+                      <div className="card-badge-wrap">
+                        <span
+                          className="method-pill card-pill"
+                          style={{
+                            borderColor: item.cardObj.color,
+                            color: item.cardObj.color,
+                            backgroundColor: `${item.cardObj.color}15`,
+                            fontWeight: 700
+                          }}
+                        >
+                          <i className="fa-solid fa-credit-card"></i>{' '}
+                          {item.cardObj.name.includes('Inter')
+                            ? 'Inter Platinum'
+                            : item.cardObj.name.includes('Nubank')
+                            ? 'Nubank Chroma'
+                            : item.cardObj.name}
+                        </span>
+                        <small className="card-due-sub">Vence dia {item.cardObj.dueDay}</small>
+                      </div>
                     ) : (
                       <span className="method-pill">{item.paymentMethod}</span>
                     )}
                   </td>
-                  <td>
-                    <strong>{formatDateBR(item.computedEndDate)}</strong>
+                  <td className="text-center">
+                    <strong style={{ fontSize: '13px' }}>{formatDateBR(item.computedEndDate)}</strong>
                   </td>
-                  <td style={{ minWidth: '150px' }}>
-                    <div className="table-progress-wrap">
+                  <td className="text-center" style={{ minWidth: '140px' }}>
+                    <div className="table-progress-wrap" style={{ margin: '0 auto' }}>
                       <div className="table-progress-labels">
                         <span>
                           {item.paidInstallmentsCount}/{item.totalInstallmentsCount} parc.
                         </span>
-                        <strong>{item.progressPct}%</strong>
+                        <span>{item.progressPct}%</span>
                       </div>
                       <div className="progress-bar-track sm">
                         <div
@@ -427,7 +435,7 @@ export default function CommitmentsView({
                       </div>
                     </div>
                   </td>
-                  <td>
+                  <td className="text-center">
                     <div className="row-actions">
                       <button
                         className="icon-btn"

@@ -280,18 +280,12 @@ export default function CardsView({
                 </div>
               </div>
 
-              <div className="cc-actions" style={{ flexWrap: 'wrap' }}>
+              <div className="cc-actions-grid">
                 <button
                   className="btn btn-sm btn-soft"
                   onClick={() => onOpenNewTransactionWithCard(card.id)}
                 >
-                  <i className="fa-solid fa-cart-plus"></i> + Lançar Gasto Aqui
-                </button>
-                <button
-                  className="btn btn-sm btn-outline"
-                  onClick={() => openEditCardModal(card)}
-                >
-                  <i className="fa-solid fa-calendar-day"></i> Editar Vencimento
+                  <i className="fa-solid fa-cart-plus"></i> + Lançar Gasto
                 </button>
                 <button
                   className="btn btn-sm btn-outline"
@@ -299,24 +293,40 @@ export default function CardsView({
                 >
                   <i className="fa-solid fa-list-check"></i> Ver Fatura ({card.monthInvoiceTxs.length})
                 </button>
-                {card.monthInvoicePending > 0 && (
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={() => openEditCardModal(card)}
+                >
+                  <i className="fa-solid fa-calendar-day"></i> Editar Vencimento
+                </button>
+                {card.monthInvoicePending > 0 ? (
                   <button
                     className="btn btn-sm btn-primary"
                     onClick={() => onPayFullCardInvoice(card.id, selectedMonth)}
                   >
                     <i className="fa-solid fa-check-double"></i> Pagar Fatura
                   </button>
-                )}
-                {cards.length > 1 && (
+                ) : (
                   <button
-                    className="icon-btn danger"
-                    title="Remover Cartão"
-                    onClick={() => onDeleteCard(card.id)}
+                    className="btn btn-sm btn-outline"
+                    disabled
+                    style={{ opacity: 0.65, cursor: 'default' }}
                   >
-                    <i className="fa-solid fa-trash"></i>
+                    <i className="fa-solid fa-circle-check text-emerald"></i> Fatura Paga
                   </button>
                 )}
               </div>
+              {cards.length > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+                  <button
+                    className="btn-link"
+                    style={{ color: '#ef4444', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    onClick={() => onDeleteCard(card.id)}
+                  >
+                    <i className="fa-solid fa-trash"></i> Remover cartão
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}

@@ -1021,18 +1021,57 @@ input[type='date'] {
 
 .data-table th {
   text-align: left;
-  padding: 12px;
+  padding: 12px 14px;
   font-size: 11.5px;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.5px;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.data-table th.text-center,
+.data-table td.text-center {
+  text-align: center !important;
+}
+
+.data-table th.text-right,
+.data-table td.text-right {
+  text-align: right !important;
 }
 
 .data-table td {
-  padding: 13px 12px;
+  padding: 14px 14px;
   border-bottom: 1px solid var(--border-color);
   vertical-align: middle;
+}
+
+.font-mono-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: -0.2px;
+}
+
+.card-badge-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.card-badge-wrap .card-pill {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+}
+
+.card-due-sub {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .cell-title-with-icon {
@@ -1080,17 +1119,26 @@ input[type='date'] {
   font-size: 11.5px;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+td.text-center .row-actions {
+  justify-content: center;
+}
+
+.table-progress-wrap {
+  min-width: 140px;
+}
+
 .table-progress-labels {
   display: flex;
   justify-content: space-between;
   font-size: 11.5px;
   margin-bottom: 4px;
-}
-
-.row-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  font-weight: 600;
 }
 
 .icon-btn {
@@ -1382,6 +1430,21 @@ input[type='date'] {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.cc-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cc-actions-grid .btn {
+  justify-content: center;
+  text-align: center;
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* GOALS & CHECKLIST */

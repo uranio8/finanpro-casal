@@ -403,15 +403,15 @@ export default function ExtraIncomeView({
         <table className="data-table">
           <thead>
             <tr>
-              <th>Data &amp; Semana</th>
+              <th className="text-center">Data &amp; Semana</th>
               <th>Atividade / Descrição</th>
               <th>Aluno / Cliente</th>
-              <th>Qtd × Valor Unit.</th>
-              <th>Valor Bruto</th>
-              <th>Dízimo + Oferta</th>
-              <th>Quem Realizou</th>
-              <th>Status (1 Clique)</th>
-              <th>Ações</th>
+              <th className="text-center">Qtd × Valor Unit.</th>
+              <th className="text-center">Valor Bruto</th>
+              <th className="text-center">Dízimo + Oferta</th>
+              <th className="text-center">Quem Realizou</th>
+              <th className="text-center">Status (1 Clique)</th>
+              <th className="text-center">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -421,9 +421,9 @@ export default function ExtraIncomeView({
 
               return (
                 <tr key={item.id}>
-                  <td>
+                  <td className="text-center">
                     <div>
-                      <strong>{formatDateBR(item.date)}</strong>
+                      <strong className="font-mono-val">{formatDateBR(item.date)}</strong>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                         {item.weekOfMonth}
                       </div>
@@ -453,19 +453,19 @@ export default function ExtraIncomeView({
                   <td>
                     <strong>{item.studentOrClient || '-'}</strong>
                   </td>
-                  <td>
-                    <span className="method-pill">
+                  <td className="text-center">
+                    <span className="method-pill font-mono-val">
                       {item.hoursOrQty}
                       {isClass ? 'h' : ' un.'} × {formatCurrency(item.unitPrice)}
                     </span>
                   </td>
-                  <td>
-                    <strong className="text-emerald">{formatCurrency(item.amount)}</strong>
+                  <td className="text-center">
+                    <strong className="text-emerald font-mono-val">{formatCurrency(item.amount)}</strong>
                   </td>
-                  <td>
+                  <td className="text-center">
                     {calc.totalConsecrated > 0 ? (
                       <div>
-                        <strong>{formatCurrency(calc.totalConsecrated)}</strong>
+                        <strong className="font-mono-val">{formatCurrency(calc.totalConsecrated)}</strong>
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                           10% + {calc.offeringPct}% (Líq: {formatCurrency(calc.netAmount)})
                         </div>
@@ -474,14 +474,14 @@ export default function ExtraIncomeView({
                       <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Isento</span>
                     )}
                   </td>
-                  <td>
+                  <td className="text-center">
                     <span className={`owner-badge ${item.owner}`}>
                       {item.owner === 'partner1'
                         ? couple.partner1Name
                         : couple.partner2Name}
                     </span>
                   </td>
-                  <td>
+                  <td className="text-center">
                     <button
                       className={`status-toggle-btn ${
                         item.status === 'received' ? 'paid' : 'pending'
@@ -497,7 +497,7 @@ export default function ExtraIncomeView({
                       {item.status === 'received' ? 'Recebido' : 'A Receber'}
                     </button>
                   </td>
-                  <td>
+                  <td className="text-center">
                     <button
                       className="icon-btn danger"
                       title="Excluir Registro"
