@@ -29,6 +29,7 @@ export default function ExtraIncomeView({
     date: `${state.selectedMonth}-11`,
     hoursOrQty: 2,
     unitPrice: 90,
+    fuelCost: 0,
     owner: 'partner1',
     status: 'received',
     applyTitheAndOffering: true,
@@ -62,6 +63,7 @@ export default function ExtraIncomeView({
       date: `${selectedMonth}-11`,
       hoursOrQty: type === 'class' ? 2 : 1,
       unitPrice: type === 'class' ? 90 : 100,
+      fuelCost: 0,
       owner: type === 'class' ? 'partner1' : 'partner2',
       status: 'received',
       applyTitheAndOffering: true,
@@ -80,6 +82,7 @@ export default function ExtraIncomeView({
       date: item.date || `${selectedMonth}-11`,
       hoursOrQty: item.hoursOrQty || 1,
       unitPrice: item.unitPrice || item.amount,
+      fuelCost: Number(item.fuelCost || 0),
       owner: item.owner || 'partner1',
       status: item.status || 'received',
       applyTitheAndOffering: item.applyTitheAndOffering !== false,
@@ -132,6 +135,7 @@ export default function ExtraIncomeView({
     const classItems = monthItems.filter((i) => i.type === 'class');
     const totalClassesAmount = classItems.reduce((acc, i) => acc + Number(i.amount || 0), 0);
     const totalClassHours = classItems.reduce((acc, i) => acc + Number(i.hoursOrQty || 0), 0);
+    const totalFuelCost = monthItems.reduce((acc, i) => acc + Number(i.fuelCost || 0), 0);
 
     const salesItems = monthItems.filter((i) => i.type !== 'class');
     const totalSalesAmount = salesItems.reduce((acc, i) => acc + Number(i.amount || 0), 0);
@@ -158,6 +162,7 @@ export default function ExtraIncomeView({
       totalPending,
       totalClassesAmount,
       totalClassHours,
+      totalFuelCost,
       totalSalesAmount,
       salesCount: salesItems.length,
       totalTithe,
@@ -206,29 +211,41 @@ export default function ExtraIncomeView({
     });
   }, [monthItems, selectedWeek, typeFilter, statusFilter, search]);
 
-  const computedFormTotal = useMemo(() => {
+  const computedFormGross = useMemo(() => {
     const q = Number(form.hoursOrQty) || 0;
     const u = Number(form.unitPrice) || 0;
     return Number((q * u).toFixed(2));
   }, [form.hoursOrQty, form.unitPrice]);
 
+  const computedFormFuel = useMemo(() => {
+    return Math.max(0, Number(form.fuelCost) || 0);
+  }, [form.fuelCost]);
+
+  const computedFormTotal = useMemo(() => {
+    return Math.max(0, Number((computedFormGross - computedFormFuel).toFixed(2)));
+  }, [computedFormGross, computedFormFuel]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.title.trim() || computedFormTotal <= 0) return;
+    if (!form.title.trim() || computedFormGross <= 0) return;
 
     if (editingId && onUpdateExtraIncome) {
       onUpdateExtraIncome({
         id: editingId,
         ...form,
         hoursOrQty: Number(form.hoursOrQty) || 1,
-        unitPrice: Number(form.unitPrice) || computedFormTotal,
+        unitPrice: Number(form.unitPrice) || computedFormGross,
+        grossAmount: computedFormGross,
+        fuelCost: computedFormFuel,
         amount: computedFormTotal
       });
     } else {
       onAddExtraIncome({
         ...form,
         hoursOrQty: Number(form.hoursOrQty) || 1,
-        unitPrice: Number(form.unitPrice) || computedFormTotal,
+        unitPrice: Number(form.unitPrice) || computedFormGross,
+        grossAmount: computedFormGross,
+        fuelCost: computedFormFuel,
         amount: computedFormTotal
       });
     }
@@ -323,6 +340,9 @@ export default function ExtraIncomeView({
             <strong className="kpi-value">{formatCurrency(metrics.totalClassesAmount)}</strong>
             <span className="kpi-sub">
               <strong>{metrics.totalClassHours}h</strong> de aulas no mês
+              {metrics.totalFuelCost > 0 && (
+                <> · Gasolina: -{formatCurrency(metrics.totalFuelCost)}</>
+              )}
             </span>
           </div>
         </div>
@@ -537,6 +557,11 @@ export default function ExtraIncomeView({
                   </td>
                   <td className="text-center">
                     <strong className="text-emerald font-mono-val">{formatCurrency(item.amount)}</strong>
+                    {Number(item.fuelCost || 0) > 0 && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        Bruto {formatCurrency(item.grossAmount || Number(item.amount || 0) + Number(item.fuelCost || 0))} − Gas. {formatCurrency(item.fuelCost)}
+                      </div>
+                    )}
                   </td>
                   <td className="text-center">
                     {calc.totalConsecrated > 0 ? (
@@ -701,7 +726,7 @@ export default function ExtraIncomeView({
                 </div>
               </div>
 
-              {/* CÁLCULO AUTOMÁTICO DE HORAS x VALOR */}
+              {/* CÁLCULO AUTOMÁTICO DE HORAS x VALOR - GASOLINA */}
               <div className="installment-plan-box">
                 <div className="form-grid-3">
                   <div className="form-group">
@@ -739,14 +764,43 @@ export default function ExtraIncomeView({
                   </div>
 
                   <div className="form-group">
-                    <label htmlFor="ext-total-calc">Total a Receber (Calculado)</label>
+                    <label htmlFor="ext-fuel-cost">Desconto Gasolina / Abastecimento (R$)</label>
                     <input
-                      id="ext-total-calc"
-                      type="text"
-                      disabled
-                      value={formatCurrency(computedFormTotal)}
+                      id="ext-fuel-cost"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0,00"
+                      value={form.fuelCost}
+                      onChange={(e) => setForm({ ...form, fuelCost: e.target.value })}
                     />
                   </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: '10px',
+                    paddingTop: '10px',
+                    borderTop: '1px dashed var(--border-color)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                    fontSize: '13px'
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    Bruto: <strong>{formatCurrency(computedFormGross)}</strong>
+                    {computedFormFuel > 0 && (
+                      <>
+                        {' '}− Gasolina: <strong>{formatCurrency(computedFormFuel)}</strong>
+                      </>
+                    )}
+                  </span>
+                  <span className="text-emerald" style={{ fontWeight: 700 }}>
+                    Ganho Líquido da Renda: {formatCurrency(computedFormTotal)}
+                  </span>
                 </div>
               </div>
 
