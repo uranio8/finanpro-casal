@@ -206,3 +206,29 @@
 * **Solução Proposta:**
   * Gerar os nomes dos cartões dinamicamente a partir de `state.cards` (ex.: `cards.map(c => c.name).join(' / ')`) ou usar rótulo neutro.
 
+
+
+---
+
+## 🔬 Auditoria de Regressão Temporal (Meses Passados, Presente e Futuros)
+
+* **Data da Execução:** 12/11/2026 (Execução 100% Headless / Segundo Plano)
+* **Resultado:** **30 testes executados — 30 APROVADOS (0 Falhas)**
+
+### Resultados Verificados por Mês:
+1. **Meses Passados (`Setembro/2026` e `Outubro/2026`):**
+   * Em `Set/2026`, as 3 primeiras parcelas (`Aluguel 1/12`, `Geladeira 1/8`, `Internet 1/12`) constam com status `paid` e valores exatos.
+   * Em `Out/2026`, a `Entrada Inicial (R$ 600,00)` do Pacote Resort e o início do Seguro do Carro estão perfeitamente preservados no histórico.
+2. **Mês Presente (`Novembro/2026`):**
+   * Fatura Inter: `R$ 1.620,00` (Seguro 2/4 R$ 600 + Internet 3/12 R$ 480 + Jantar R$ 260 + Combustível R$ 280).
+   * Fatura Nubank: `R$ 2.295,00` (Resort 2/6 R$ 400 + Geladeira 3/8 R$ 600 + Compra Atacadão R$ 1.180 + Assinaturas R$ 115).
+   * Limite tomado e disponível dos dois cartões calculados com precisão de centavos.
+3. **Meses Futuros (`Dezembro/2026` até `Agosto/2027`):**
+   * `Jan/2027`: Encerra o Seguro do Carro (`Parcela 4/4`). Em `Fev/2027`, ele já não é mais cobrado.
+   * `Mar/2027`: Encerra o Pacote Resort (`Parcela 6/6`).
+   * `Abr/2027`: Encerra a Geladeira Brastemp (`Parcela 8/8`). A partir de `Mai/2027`, a fatura do Nubank zera completamente.
+   * `Ago/2027`: Encerram o Aluguel (`Parcela 12/12`) e a Internet (`Parcela 12/12`).
+   * `Set/2027`: Zero compromissos restantes do ciclo inicial de 12 meses.
+4. **Cascata e Ações Cruzadas:**
+   * Adiantamento de parcela futura atualiza o progresso em *Parcelados & Fixas* sem corromper o mês corrente.
+   * Mudança de dia de vencimento de cartão propaga perfeitamente o prazo final de todas as parcelas pendentes.
