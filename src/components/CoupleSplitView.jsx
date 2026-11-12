@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { formatCurrency, getMonthLabel } from '../utils/formatters';
+import { formatCurrency, getMonthLabel, getEffectiveMonthIncome } from '../utils/formatters';
 
-export default function CoupleSplitView({ state, onUpdateCoupleSettings }) {
+export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenMonthIncomeModal }) {
   const { couple, transactions, extraIncomes = [], selectedMonth } = state;
 
   const monthTxs = useMemo(
@@ -14,6 +14,11 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings }) {
     [extraIncomes, selectedMonth]
   );
 
+  const effectiveMonthIncome = useMemo(
+    () => getEffectiveMonthIncome(state, selectedMonth),
+    [state, selectedMonth]
+  );
+
   const p1Extra = monthExtras
     .filter((i) => i.owner === 'partner1')
     .reduce((acc, i) => acc + Number(i.amount || 0), 0);
@@ -22,8 +27,9 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings }) {
     .filter((i) => i.owner === 'partner2')
     .reduce((acc, i) => acc + Number(i.amount || 0), 0);
 
-  const p1Salary = Number(couple.partner1Income || 0);
-  const p2Salary = Number(couple.partner2Income || 0);
+  const p1Salary = effectiveMonthIncome.partner1Income;
+  const p2Salary = effectiveMonthIncome.partner2Income;
+  const donationAmount = effectiveMonthIncome.donationAmount;
 
   const p1Income = p1Salary + p1Extra;
   const p2Income = p2Salary + p2Extra;
@@ -33,7 +39,6 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings }) {
   const tithePct = couple.titheEnabled ? Number(couple.tithePercent ?? 10) : 0;
   const p1OffPct = couple.titheEnabled ? Number(couple.partner1OfferingPercent ?? 5) : 0;
   const p2OffPct = couple.titheEnabled ? Number(couple.partner2OfferingPercent ?? 5) : 0;
-  const donationAmount = Number(couple.donationAmount || 0);
 
   const p1TitheBase = p1Salary + (couple.includeExtraInTithe ? p1Extra : 0);
   const p2TitheBase = p2Salary + (couple.includeExtraInTithe ? p2Extra : 0);
@@ -145,6 +150,15 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings }) {
           </p>
         </div>
         <div className="header-btns">
+          {onOpenMonthIncomeModal && (
+            <button
+              className="btn btn-soft"
+              onClick={onOpenMonthIncomeModal}
+              title="Informar ou alterar salários deste mês sem afetar os outros meses"
+            >
+              <i className="fa-solid fa-money-bill-wave"></i> Definir Renda do Mês
+            </button>
+          )}
           <button
             className={`btn ${
               isUnified ? 'btn-primary' : 'btn-outline'

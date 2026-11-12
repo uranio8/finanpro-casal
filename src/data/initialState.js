@@ -81,6 +81,18 @@ export const INITIAL_STATE = {
     theme: 'theme-emerald',
     monthlySavingsTarget: 2500
   },
+  monthlyIncomes: {
+    '2026-11': {
+      partner1Income: 5900,
+      partner2Income: 700,
+      donationAmount: 0
+    },
+    '2026-10': {
+      partner1Income: 6500,
+      partner2Income: 5500,
+      donationAmount: 0
+    }
+  },
   categoryBudgets: {
     dizimo: 1950,
     moradia: 3200,

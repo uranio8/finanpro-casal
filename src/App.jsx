@@ -3,7 +3,8 @@ import { INITIAL_STATE, CATEGORIES, INCOME_CATEGORIES } from './data/initialStat
 import {
   formatCurrency,
   getMonthLabel,
-  shiftYearMonth
+  shiftYearMonth,
+  getEffectiveMonthIncome
 } from './utils/formatters';
 import DashboardView from './components/DashboardView';
 import CommitmentsView from './components/CommitmentsView';
@@ -407,6 +408,127 @@ export default function App() {
     showToast(`Meta "${updatedGoalData.title || 'Caixinha'}" atualizada com sucesso! ✨`);
   };
 
+  const [isMonthIncomeModalOpen, setIsMonthIncomeModalOpen] = useState(false);
+  const effectiveIncome = getEffectiveMonthIncome(state, state.selectedMonth);
+
+  const [monthIncomeForm, setMonthIncomeForm] = useState({
+    partner1Income: '',
+    partner2Income: '',
+    donationAmount: ''
+  });
+
+  const openMonthIncomeModal = () => {
+    setMonthIncomeForm({
+      partner1Income: effectiveIncome.partner1Income,
+      partner2Income: effectiveIncome.partner2Income,
+      donationAmount: effectiveIncome.donationAmount
+    });
+    setIsMonthIncomeModalOpen(true);
+  };
+
+  const handleSaveMonthIncome = (e) => {
+    e.preventDefault();
+    const p1Sal = Number(monthIncomeForm.partner1Income) || 0;
+    const p2Sal = Number(monthIncomeForm.partner2Income) || 0;
+    const don = Number(monthIncomeForm.donationAmount) || 0;
+    const ym = state.selectedMonth;
+
+    setState((prev) => {
+      const updatedMonthlyIncomes = {
+        ...(prev.monthlyIncomes || {}),
+        [ym]: {
+          partner1Income: p1Sal,
+          partner2Income: p2Sal,
+          donationAmount: don
+        }
+      };
+
+      const tx1Title = `Salário Mensal — ${prev.couple.partner1Name}`;
+      const tx2Title = `Salário Mensal — ${prev.couple.partner2Name}`;
+
+      let newTransactions = [...prev.transactions];
+
+      // Salário Wesley
+      const p1TxIndex = newTransactions.findIndex(
+        (t) => t.type === 'income' && t.dueDate?.startsWith(ym) && t.owner === 'partner1'
+      );
+      if (p1TxIndex >= 0) {
+        newTransactions[p1TxIndex] = {
+          ...newTransactions[p1TxIndex],
+          amount: p1Sal
+        };
+      } else if (p1Sal > 0) {
+        newTransactions.push({
+          id: `tx-inc-p1-${ym}`,
+          title: tx1Title,
+          type: 'income',
+          category: 'salario',
+          amount: p1Sal,
+          dueDate: `${ym}-05`,
+          paidDate: `${ym}-05`,
+          status: 'paid',
+          owner: 'partner1',
+          paidBy: 'partner1',
+          paymentMethod: 'PIX'
+        });
+      }
+
+      // Salário Beatriz
+      const p2TxIndex = newTransactions.findIndex(
+        (t) => t.type === 'income' && t.dueDate?.startsWith(ym) && t.owner === 'partner2'
+      );
+      if (p2TxIndex >= 0) {
+        newTransactions[p2TxIndex] = {
+          ...newTransactions[p2TxIndex],
+          amount: p2Sal
+        };
+      } else if (p2Sal > 0) {
+        newTransactions.push({
+          id: `tx-inc-p2-${ym}`,
+          title: tx2Title,
+          type: 'income',
+          category: 'salario',
+          amount: p2Sal,
+          dueDate: `${ym}-05`,
+          paidDate: `${ym}-05`,
+          status: 'paid',
+          owner: 'partner2',
+          paidBy: 'partner2',
+          paymentMethod: 'PIX'
+        });
+      }
+
+      // Sincronizar transações de Dízimo e Ofertas daquele mês se existirem
+      const tithePct = prev.couple.titheEnabled ? Number(prev.couple.tithePercent ?? 10) : 0;
+      const p1OffPct = prev.couple.titheEnabled ? Number(prev.couple.partner1OfferingPercent ?? 5) : 0;
+      const p2OffPct = prev.couple.titheEnabled ? Number(prev.couple.partner2OfferingPercent ?? 5) : 0;
+
+      const p1TitheTotal = (p1Sal * (tithePct + p1OffPct)) / 100;
+      const p2TitheTotal = (p2Sal * (tithePct + p2OffPct)) / 100;
+
+      newTransactions = newTransactions.map((t) => {
+        if (t.category === 'dizimo' && t.dueDate?.startsWith(ym)) {
+          if (t.owner === 'partner1') {
+            return { ...t, amount: p1TitheTotal };
+          }
+          if (t.owner === 'partner2') {
+            return { ...t, amount: p2TitheTotal };
+          }
+        }
+        return t;
+      });
+
+      return {
+        ...prev,
+        monthlyIncomes: updatedMonthlyIncomes,
+        transactions: newTransactions
+      };
+    });
+
+    setIsMonthIncomeModalOpen(false);
+    showToast(`Renda de ${getMonthLabel(ym)} salva com sucesso! 💰`);
+  };
+
   const handleToggleChecklist = (chkId) => {
     setState((prev) => ({
       ...prev,
@@ -590,6 +712,17 @@ export default function App() {
 
           <div className="topbar-right">
             <button
+              className="btn btn-sm btn-outline"
+              style={{ gap: '6px' }}
+              title="Clique para definir quanto cada um recebeu neste mês específico"
+              onClick={openMonthIncomeModal}
+            >
+              <i className="fa-solid fa-money-bill-wave text-emerald"></i> Renda do Mês:{' '}
+              <strong className="text-emerald">
+                {formatCurrency(effectiveIncome.partner1Income + effectiveIncome.partner2Income)}
+              </strong>
+            </button>
+            <button
               className="btn btn-sm btn-soft"
               onClick={() => setActiveRoute('extra-income')}
             >
@@ -611,6 +744,7 @@ export default function App() {
             onNavigate={setActiveRoute}
             onOpenNewTransaction={handleOpenNewTransaction}
             onQuickPayTransaction={handleQuickPayTransaction}
+            onOpenMonthIncomeModal={openMonthIncomeModal}
             onOpenCommitmentModal={() => {
               setActiveRoute('commitments');
               setExternalCommitmentModal(true);
@@ -677,6 +811,7 @@ export default function App() {
           <CoupleSplitView
             state={state}
             onUpdateCoupleSettings={handleUpdateCoupleSettings}
+            onOpenMonthIncomeModal={openMonthIncomeModal}
           />
         )}
 
@@ -971,6 +1106,168 @@ export default function App() {
                 </button>
                 <button type="submit" className="btn btn-primary">
                   <i className="fa-solid fa-check"></i> Salvar Gasto
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DEFINIR RENDA ESPECÍFICA DO MÊS */}
+      {isMonthIncomeModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setIsMonthIncomeModalOpen(false)}
+        >
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>
+                <i className="fa-solid fa-money-bill-wave text-emerald"></i> Renda de{' '}
+                {getMonthLabel(state.selectedMonth)}
+              </h3>
+              <button
+                className="close-btn"
+                onClick={() => setIsMonthIncomeModalOpen(false)}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <form onSubmit={handleSaveMonthIncome} className="modal-body">
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+                Defina quanto você e seu cônjuge receberam em{' '}
+                <strong>{getMonthLabel(state.selectedMonth)}</strong>. Esta alteração se aplica{' '}
+                <strong>apenas a este mês</strong>, mantendo intacto o histórico dos outros meses.
+              </p>
+
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label htmlFor="m-p1-inc">
+                    Salário de {state.couple.partner1Name} (R$) *
+                  </label>
+                  <input
+                    id="m-p1-inc"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    placeholder="Ex: 5900.00"
+                    value={monthIncomeForm.partner1Income}
+                    onChange={(e) =>
+                      setMonthIncomeForm({
+                        ...monthIncomeForm,
+                        partner1Income: e.target.value
+                      })
+                    }
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="m-p2-inc">
+                    Salário de {state.couple.partner2Name} (R$) *
+                  </label>
+                  <input
+                    id="m-p2-inc"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    placeholder="Ex: 700.00"
+                    value={monthIncomeForm.partner2Income}
+                    onChange={(e) =>
+                      setMonthIncomeForm({
+                        ...monthIncomeForm,
+                        partner2Income: e.target.value
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="m-don-inc">
+                  Doações Esporádicas / Especiais deste Mês (R$)
+                </label>
+                <input
+                  id="m-don-inc"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ex: 0.00 (ajuda de custo ou caridade fora dízimo e oferta)"
+                  value={monthIncomeForm.donationAmount}
+                  onChange={(e) =>
+                    setMonthIncomeForm({
+                      ...monthIncomeForm,
+                      donationAmount: e.target.value
+                    })
+                  }
+                />
+              </div>
+
+              {/* SIMULAÇÃO EM TEMPO REAL DAS PRIMÍCIAS DESTE MÊS */}
+              {(() => {
+                const p1 = Number(monthIncomeForm.partner1Income) || 0;
+                const p2 = Number(monthIncomeForm.partner2Income) || 0;
+                const don = Number(monthIncomeForm.donationAmount) || 0;
+                const tithePct = state.couple.titheEnabled
+                  ? Number(state.couple.tithePercent ?? 10)
+                  : 0;
+                const p1Off = state.couple.titheEnabled
+                  ? Number(state.couple.partner1OfferingPercent ?? 5)
+                  : 0;
+                const p2Off = state.couple.titheEnabled
+                  ? Number(state.couple.partner2OfferingPercent ?? 5)
+                  : 0;
+
+                const p1TitheTotal = (p1 * (tithePct + p1Off)) / 100;
+                const p2TitheTotal = (p2 * (tithePct + p2Off)) / 100;
+                const totalIncomeM = p1 + p2;
+                const totalTitheDon = p1TitheTotal + p2TitheTotal + don;
+                const netIncomeM = totalIncomeM - totalTitheDon;
+
+                return (
+                  <div className="installment-plan-box" style={{ background: 'var(--bg-subtle)' }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: '12px',
+                        marginBottom: '8px',
+                        color: 'var(--text-main)'
+                      }}
+                    >
+                      <i className="fa-solid fa-calculator text-emerald"></i> Simulação de Primícias em{' '}
+                      {getMonthLabel(state.selectedMonth)}:
+                    </div>
+                    <div className="form-grid-3">
+                      <div className="preview-pill">
+                        <span>Total Renda Salários</span>
+                        <strong className="text-emerald">{formatCurrency(totalIncomeM)}</strong>
+                      </div>
+                      <div className="preview-pill">
+                        <span>Dízimo + Oferta Casal</span>
+                        <strong style={{ color: '#059669' }}>{formatCurrency(totalTitheDon)}</strong>
+                        <small>
+                          10% + {p1Off}% / {p2Off}%
+                        </small>
+                      </div>
+                      <div className="preview-pill">
+                        <span>Sobra Líquida Salários</span>
+                        <strong className="text-emerald">{formatCurrency(netIncomeM)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setIsMonthIncomeModalOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  <i className="fa-solid fa-check"></i> Salvar Renda de{' '}
+                  {getMonthLabel(state.selectedMonth)}
                 </button>
               </div>
             </form>

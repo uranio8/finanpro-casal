@@ -61,3 +61,18 @@ export function shiftYearMonth(yearMonth, deltaMonths) {
   return `${newY}-${String(newM).padStart(2, '0')}`;
 }
 
+export function getEffectiveMonthIncome(state, yearMonth) {
+  if (!state) return { partner1Income: 0, partner2Income: 0, donationAmount: 0, isCustom: false };
+  const ym = yearMonth || state.selectedMonth;
+  const monthData = state.monthlyIncomes?.[ym];
+  const p1Sal = monthData?.partner1Income ?? state.couple?.partner1Income ?? 0;
+  const p2Sal = monthData?.partner2Income ?? state.couple?.partner2Income ?? 0;
+  const don = monthData?.donationAmount ?? state.couple?.donationAmount ?? 0;
+  return {
+    partner1Income: Number(p1Sal),
+    partner2Income: Number(p2Sal),
+    donationAmount: Number(don),
+    isCustom: !!monthData
+  };
+}
+

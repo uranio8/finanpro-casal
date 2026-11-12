@@ -14,7 +14,8 @@ import {
   formatCurrency,
   formatShortDateBR,
   getMonthLabel,
-  getDaysDiffFromToday
+  getDaysDiffFromToday,
+  getEffectiveMonthIncome
 } from '../utils/formatters';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
@@ -24,7 +25,8 @@ export default function DashboardView({
   onNavigate,
   onOpenNewTransaction,
   onQuickPayTransaction,
-  onOpenCommitmentModal
+  onOpenCommitmentModal,
+  onOpenMonthIncomeModal
 }) {
   const [cashFlowYear, setCashFlowYear] = useState(state.selectedMonth.split('-')[0] || '2026');
   const [cashFlowFilter, setCashFlowFilter] = useState('all'); // 'all' | 'paid' | 'pending'
@@ -77,24 +79,27 @@ export default function DashboardView({
     [monthTransactions]
   );
 
+  const effectiveMonthIncome = useMemo(
+    () => getEffectiveMonthIncome(state, selectedMonth),
+    [state, selectedMonth]
+  );
+
   const baseSalaryIncome = useMemo(() => {
-    const logged = monthIncomes.reduce((acc, t) => acc + Number(t.amount || 0), 0);
-    if (logged > 0) return logged;
-    if (ownerFilter === 'partner1') return Number(couple.partner1Income || 0);
-    if (ownerFilter === 'partner2') return Number(couple.partner2Income || 0);
-    return Number(couple.partner1Income || 0) + Number(couple.partner2Income || 0);
-  }, [monthIncomes, couple, ownerFilter]);
+    if (ownerFilter === 'partner1') return effectiveMonthIncome.partner1Income;
+    if (ownerFilter === 'partner2') return effectiveMonthIncome.partner2Income;
+    return effectiveMonthIncome.partner1Income + effectiveMonthIncome.partner2Income;
+  }, [effectiveMonthIncome, ownerFilter]);
 
   const totalIncome = baseSalaryIncome + totalExtraIncomeMonth;
 
-  // Dízimo (10%) + Oferta (% configurada) Calculation
+  // Dízimo (10%) + Oferta (% configurada) Calculation sobre a renda específica do mês
   const titheSummary = useMemo(() => {
     const tithePct = couple.titheEnabled ? Number(couple.tithePercent ?? 10) : 0;
     const p1OffPct = couple.titheEnabled ? Number(couple.partner1OfferingPercent ?? 5) : 0;
     const p2OffPct = couple.titheEnabled ? Number(couple.partner2OfferingPercent ?? 5) : 0;
 
-    const p1Sal = Number(couple.partner1Income || 0);
-    const p2Sal = Number(couple.partner2Income || 0);
+    const p1Sal = effectiveMonthIncome.partner1Income;
+    const p2Sal = effectiveMonthIncome.partner2Income;
 
     const p1Extra = extraIncomes
       .filter(
@@ -124,7 +129,7 @@ export default function DashboardView({
     const p2Tithe = (p2BaseForTithe * tithePct) / 100;
     const p2Offering = (p2BaseForTithe * p2OffPct) / 100;
 
-    const donation = Number(couple.donationAmount || 0);
+    const donation = effectiveMonthIncome.donationAmount;
 
     return {
       tithePct,
@@ -141,7 +146,7 @@ export default function DashboardView({
       totalOffering: p1Offering + p2Offering,
       grandTotal: p1Tithe + p1Offering + p2Tithe + p2Offering + donation
     };
-  }, [couple, extraIncomes, selectedMonth]);
+  }, [couple, extraIncomes, selectedMonth, effectiveMonthIncome]);
 
   const totalExpense = useMemo(
     () => monthExpenses.reduce((acc, t) => acc + Number(t.amount || 0), 0),
@@ -325,6 +330,15 @@ export default function DashboardView({
           </div>
         </div>
         <div className="hero-actions">
+          {onOpenMonthIncomeModal && (
+            <button
+              className="btn btn-outline"
+              title="Informar quanto você e seu cônjuge receberam especificamente neste mês"
+              onClick={onOpenMonthIncomeModal}
+            >
+              <i className="fa-solid fa-money-bill-wave text-emerald"></i> Renda de {getMonthLabel(selectedMonth).split(' ')[0]}
+            </button>
+          )}
           <button
             className="btn btn-primary"
             onClick={() => onOpenNewTransaction('expense')}
