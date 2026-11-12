@@ -115,3 +115,24 @@
 O Módulo 2 possui regras financeiras ricas e inovadoras (especialmente o modelo de três vias: Tudo Junto / Proporcional / 50-50 e a gestão de Aulas Particulares com Primícias), mas sofre de desalinhamento de dados iniciais e falta de sincronização bidirecional entre transações e salários/rendas extras.
 
 Conforme a **Regra de Ouro #6 (Mandatória)** do `AGENTS.md`, todas as alterações de código aguardam apresentação e aprovação prévia do plano de implementação pelo usuário antes de serem executadas.
+
+
+
+---
+
+## 🔬 Auditoria de Regressão e Validação das Correções do Módulo 2
+
+* **Data da Execução:** 12/11/2026 (Execução 100% Headless / Segundo Plano)
+* **Resultado:** **20 asserções executadas — 20 APROVADAS (0 Falhas)**
+
+### Resumo das Resoluções Aplicadas:
+1. **ISSUE-M2-01 (RESOLVIDO):** `INITIAL_STATE.monthlyIncomes['2026-11']` alinhado para R$ 6.500 (Wesley) e R$ 5.500 (Beatriz), com migração automática no `App.jsx` (v1.4.0) para limpar resíduos de cache do `localStorage`.
+2. **ISSUE-M2-02 (RESOLVIDO):** `handleSaveMonthIncome` em `src/App.jsx` atualizado para criar automaticamente as transações de Dízimo/Oferta de Wesley e Beatriz (`tx-diz-p1-...` e `tx-diz-p2-...`) e doações especiais (`tx-don-...`) em qualquer mês novo.
+3. **ISSUE-M2-03 (RESOLVIDO):** Base de cálculo de primícias harmonizada entre `App.jsx` e `CoupleSplitView.jsx`. Se `includeExtraInTithe` estiver ativo, o dízimo da renda extra recebida é computado e sincronizado nas transações e na divisão do casal.
+4. **ISSUE-M2-04 (RESOLVIDO):** Adicionado botão de edição com ícone de lápis (`fa-pencil`) em cada linha de `ExtraIncomeView.jsx`, permitindo abrir o modal pré-preenchido, alterar dados e salvar via `onUpdateExtraIncome`.
+5. **ISSUE-M2-05 (RESOLVIDO):** Adicionada confirmação preventiva (`window.confirm`) antes de qualquer exclusão de aula ou venda em `ExtraIncomeView.jsx`.
+6. **ISSUE-M2-06 (RESOLVIDO):** Filtro `ownerFilter === 'joint'` agora exibe banner informativo contextual explicando que as atividades de renda extra são individuais de Wesley ou Beatriz.
+7. **ISSUE-M2-07 (RESOLVIDO):** `CoupleSplitView.jsx` agora computa receitas avulsas registradas em `transactions` (`category !== 'salario'`), garantindo que bônus, rendimentos e freelas contem na renda e no rateio justo.
+8. **ISSUE-M2-08 (RESOLVIDO):** Primícias sobre renda extra agora incidem sobre o montante efetivamente recebido (`p1ExtraReceived` / `p2ExtraReceived`), sem onerar o casal por valores pendentes de alunos.
+9. **ISSUE-M2-09 (RESOLVIDO):** Tolerância do banner de acerto de contas refinada para precisão estrita de centavos (`< 0.01`).
+10. **ISSUE-M2-10 (RESOLVIDO):** Adicionada orientação visual clara em `SettingsView.jsx` explicando que salários cadastrados são padrões do casal e que ajustes em meses específicos devem ser feitos via "Renda do Mês".

@@ -240,6 +240,10 @@ export default function SettingsView({
               </div>
             </div>
 
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 12px 0' }}>
+              <i className="fa-solid fa-circle-info text-emerald"></i> <em>Estes são os salários-base padrão do casal. Para ajustar rendas de meses específicos (com bônus, férias ou 13º) sem alterar o padrão geral, utilize o botão <strong>"Renda do Mês"</strong> na barra superior.</em>
+            </p>
+
             {/* CAMPO DE DOAÇÕES ADICIONAIS / ESPORÁDICAS */}
             <div className="form-group" style={{ marginTop: '12px', marginBottom: '14px' }}>
               <label htmlFor="don-amount">

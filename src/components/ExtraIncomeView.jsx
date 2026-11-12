@@ -10,6 +10,7 @@ const WEEKS = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4', 'Semana 5'];
 export default function ExtraIncomeView({
   state,
   onAddExtraIncome,
+  onUpdateExtraIncome,
   onToggleExtraIncomeStatus,
   onDeleteExtraIncome
 }) {
@@ -19,6 +20,7 @@ export default function ExtraIncomeView({
   const [search, setSearch] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({
     title: '',
     type: 'class',
@@ -34,8 +36,10 @@ export default function ExtraIncomeView({
   });
 
   const { extraIncomes = [], selectedMonth, couple, ownerFilter } = state;
+  const isJointFilter = ownerFilter === 'joint';
 
   const openModalWithType = (type = 'class') => {
+    setEditingId(null);
     setForm({
       title: type === 'class' ? 'Aula Particular — ' : 'Venda — ',
       type,
@@ -52,8 +56,27 @@ export default function ExtraIncomeView({
     setIsModalOpen(true);
   };
 
+  const openEditModal = (item) => {
+    setEditingId(item.id);
+    setForm({
+      title: item.title,
+      type: item.type || 'class',
+      studentOrClient: item.studentOrClient || '',
+      weekOfMonth: item.weekOfMonth || 'Semana 2',
+      date: item.date || `${selectedMonth}-11`,
+      hoursOrQty: item.hoursOrQty || 1,
+      unitPrice: item.unitPrice || item.amount,
+      owner: item.owner || 'partner1',
+      status: item.status || 'received',
+      applyTitheAndOffering: item.applyTitheAndOffering !== false,
+      notes: item.notes || ''
+    });
+    setIsModalOpen(true);
+  };
+
   // Filter by active month & ownerFilter
   const monthItems = useMemo(() => {
+    if (ownerFilter === 'joint') return [];
     return extraIncomes
       .filter((item) => {
         if (!item.date || !item.date.startsWith(selectedMonth)) return false;
@@ -173,14 +196,31 @@ export default function ExtraIncomeView({
     e.preventDefault();
     if (!form.title.trim() || computedFormTotal <= 0) return;
 
-    onAddExtraIncome({
-      ...form,
-      hoursOrQty: Number(form.hoursOrQty) || 1,
-      unitPrice: Number(form.unitPrice) || computedFormTotal,
-      amount: computedFormTotal
-    });
+    if (editingId && onUpdateExtraIncome) {
+      onUpdateExtraIncome({
+        id: editingId,
+        ...form,
+        hoursOrQty: Number(form.hoursOrQty) || 1,
+        unitPrice: Number(form.unitPrice) || computedFormTotal,
+        amount: computedFormTotal
+      });
+    } else {
+      onAddExtraIncome({
+        ...form,
+        hoursOrQty: Number(form.hoursOrQty) || 1,
+        unitPrice: Number(form.unitPrice) || computedFormTotal,
+        amount: computedFormTotal
+      });
+    }
 
     setIsModalOpen(false);
+    setEditingId(null);
+  };
+
+  const handleDeleteClick = (item) => {
+    if (window.confirm(`Deseja realmente excluir o registro "${item.title}"?`)) {
+      onDeleteExtraIncome(item.id);
+    }
   };
 
   return (
@@ -357,6 +397,22 @@ export default function ExtraIncomeView({
         </div>
       </div>
 
+      {/* AVISO QUANDO FILTRO DE CONTAS CONJUNTAS ESTIVER ATIVO */}
+      {isJointFilter && (
+        <div className="card settlement-banner" style={{ background: 'var(--bg-subtle)', marginBottom: '16px' }}>
+          <div className="settlement-icon" style={{ background: '#e0f2fe', color: '#0284c7' }}>
+            <i className="fa-solid fa-circle-info"></i>
+          </div>
+          <div className="settlement-text">
+            <h4>Rendas Extras são Atividades Pessoais</h4>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Aulas particulares, mentorias e vendas são geradas individualmente por <strong>{couple.partner1Name}</strong> ou <strong>{couple.partner2Name}</strong>.
+              Para visualizá-las ou registrar novas, selecione <strong>Todos</strong> ou o cônjuge específico no topo.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* BARRA DE FILTROS & TABELA DE AULAS E VENDAS */}
       <div className="card table-card">
         <div className="tabs-and-filters">
@@ -497,11 +553,19 @@ export default function ExtraIncomeView({
                       {item.status === 'received' ? 'Recebido' : 'A Receber'}
                     </button>
                   </td>
-                  <td className="text-center">
+                  <td className="text-center" style={{ whiteSpace: 'nowrap' }}>
+                    <button
+                      className="icon-btn"
+                      title="Editar Registro"
+                      style={{ marginRight: '6px' }}
+                      onClick={() => openEditModal(item)}
+                    >
+                      <i className="fa-solid fa-pencil"></i>
+                    </button>
                     <button
                       className="icon-btn danger"
                       title="Excluir Registro"
-                      onClick={() => onDeleteExtraIncome(item.id)}
+                      onClick={() => handleDeleteClick(item)}
                     >
                       <i className="fa-solid fa-trash"></i>
                     </button>
@@ -512,7 +576,9 @@ export default function ExtraIncomeView({
             {filteredItems.length === 0 && (
               <tr>
                 <td colSpan="9" className="empty-table-cell">
-                  Nenhuma aula ou venda registrada para o filtro selecionado.
+                  {isJointFilter
+                    ? 'Rendas extras são atividades individuais. Selecione "Todos", Wesley ou Beatriz no topo para gerenciar.'
+                    : 'Nenhuma aula ou venda registrada para o filtro selecionado.'}
                 </td>
               </tr>
             )}
@@ -527,7 +593,9 @@ export default function ExtraIncomeView({
             <div className="modal-header">
               <h3>
                 <i className="fa-solid fa-chalkboard-user"></i>{' '}
-                {form.type === 'class'
+                {editingId
+                  ? 'Editar Registro de Renda Extra'
+                  : form.type === 'class'
                   ? 'Registrar Aula Particular da Semana'
                   : 'Registrar Venda ou Ganho Extra'}
               </h3>
@@ -722,7 +790,7 @@ export default function ExtraIncomeView({
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  <i className="fa-solid fa-check"></i> Salvar Registro
+                  <i className="fa-solid fa-check"></i> {editingId ? 'Atualizar Registro' : 'Salvar Registro'}
                 </button>
               </div>
             </form>

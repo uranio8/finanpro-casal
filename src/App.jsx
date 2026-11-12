@@ -66,9 +66,29 @@ export default function App() {
           migratedTransactions = [...INITIAL_STATE.transactions, ...userCustomTransactions];
         }
 
+        // v1.4.0 upgrade: corrigir inconsistência de salários em Nov/2026 (5900/700 -> 6500/5500)
+        let migratedMonthlyIncomes = {
+          ...INITIAL_STATE.monthlyIncomes,
+          ...(parsed.monthlyIncomes || {})
+        };
+        const needsVersion140Upgrade = !parsed.version || parsed.version < '1.4.0';
+        if (needsVersion140Upgrade) {
+          if (
+            migratedMonthlyIncomes['2026-11']?.partner1Income === 5900 &&
+            migratedMonthlyIncomes['2026-11']?.partner2Income === 700
+          ) {
+            migratedMonthlyIncomes['2026-11'] = {
+              partner1Income: 6500,
+              partner2Income: 5500,
+              donationAmount: 0
+            };
+          }
+        }
+
         return {
           ...INITIAL_STATE,
           ...parsed,
+          version: '1.4.0',
           couple: {
             ...INITIAL_STATE.couple,
             ...(parsed.couple || {}),
@@ -80,6 +100,7 @@ export default function App() {
           cards: cardsToUse,
           transactions: migratedTransactions,
           commitments: migratedCommitments,
+          monthlyIncomes: migratedMonthlyIncomes,
           categoryBudgets: {
             ...INITIAL_STATE.categoryBudgets,
             ...(parsed.categoryBudgets || {})
@@ -315,6 +336,16 @@ export default function App() {
         ? 'Aula particular registrada na semana! 🎓'
         : 'Venda / ganho extra registrado com sucesso! 💰'
     );
+  };
+
+  const handleUpdateExtraIncome = (updatedItem) => {
+    setState((prev) => ({
+      ...prev,
+      extraIncomes: (prev.extraIncomes || []).map((i) =>
+        i.id === updatedItem.id ? { ...i, ...updatedItem } : i
+      )
+    }));
+    showToast('Registro de renda extra atualizado com sucesso! ✨');
   };
 
   const handleToggleExtraIncomeStatus = (itemId) => {
@@ -651,25 +682,92 @@ export default function App() {
         });
       }
 
-      // Sincronizar transações de Dízimo e Ofertas daquele mês se existirem
+      // Sincronizar transações de Dízimo e Ofertas daquele mês (atualizar ou criar se não existirem)
       const tithePct = prev.couple.titheEnabled ? Number(prev.couple.tithePercent ?? 10) : 0;
       const p1OffPct = prev.couple.titheEnabled ? Number(prev.couple.partner1OfferingPercent ?? 5) : 0;
       const p2OffPct = prev.couple.titheEnabled ? Number(prev.couple.partner2OfferingPercent ?? 5) : 0;
 
-      const p1TitheTotal = (p1Sal * (tithePct + p1OffPct)) / 100;
-      const p2TitheTotal = (p2Sal * (tithePct + p2OffPct)) / 100;
+      // Se includeExtraInTithe estiver ativo, somar a renda extra recebida do mês
+      const monthExtras = (prev.extraIncomes || []).filter((i) => i.date?.startsWith(ym));
+      const p1Extra = prev.couple.includeExtraInTithe
+        ? monthExtras.filter((i) => i.owner === 'partner1' && i.status === 'received').reduce((a, i) => a + Number(i.amount || 0), 0)
+        : 0;
+      const p2Extra = prev.couple.includeExtraInTithe
+        ? monthExtras.filter((i) => i.owner === 'partner2' && i.status === 'received').reduce((a, i) => a + Number(i.amount || 0), 0)
+        : 0;
 
-      newTransactions = newTransactions.map((t) => {
-        if (t.category === 'dizimo' && t.dueDate?.startsWith(ym)) {
-          if (t.owner === 'partner1') {
-            return { ...t, amount: p1TitheTotal };
-          }
-          if (t.owner === 'partner2') {
-            return { ...t, amount: p2TitheTotal };
-          }
+      const p1TitheTotal = Number((((p1Sal + p1Extra) * (tithePct + p1OffPct)) / 100).toFixed(2));
+      const p2TitheTotal = Number((((p2Sal + p2Extra) * (tithePct + p2OffPct)) / 100).toFixed(2));
+
+      // Dízimo Wesley
+      const p1DizIdx = newTransactions.findIndex(
+        (t) => t.category === 'dizimo' && t.dueDate?.startsWith(ym) && t.owner === 'partner1'
+      );
+      if (p1DizIdx >= 0) {
+        newTransactions[p1DizIdx] = { ...newTransactions[p1DizIdx], amount: p1TitheTotal };
+      } else if (prev.couple.titheEnabled && p1TitheTotal > 0) {
+        newTransactions.push({
+          id: `tx-diz-p1-${ym}`,
+          title: `Dízimo (10%) + Oferta (${p1OffPct}%) — ${prev.couple.partner1Name}`,
+          type: 'expense',
+          category: 'dizimo',
+          amount: p1TitheTotal,
+          dueDate: `${ym}-06`,
+          paidDate: ym <= prev.selectedMonth ? `${ym}-06` : '',
+          status: ym < prev.selectedMonth ? 'paid' : (ym === prev.selectedMonth ? 'paid' : 'pending'),
+          owner: 'partner1',
+          paidBy: 'partner1',
+          paymentMethod: 'PIX'
+        });
+      }
+
+      // Dízimo Beatriz
+      const p2DizIdx = newTransactions.findIndex(
+        (t) => t.category === 'dizimo' && t.dueDate?.startsWith(ym) && t.owner === 'partner2'
+      );
+      if (p2DizIdx >= 0) {
+        newTransactions[p2DizIdx] = { ...newTransactions[p2DizIdx], amount: p2TitheTotal };
+      } else if (prev.couple.titheEnabled && p2TitheTotal > 0) {
+        newTransactions.push({
+          id: `tx-diz-p2-${ym}`,
+          title: `Dízimo (10%) + Oferta (${p2OffPct}%) — ${prev.couple.partner2Name}`,
+          type: 'expense',
+          category: 'dizimo',
+          amount: p2TitheTotal,
+          dueDate: `${ym}-06`,
+          paidDate: ym <= prev.selectedMonth ? `${ym}-06` : '',
+          status: ym < prev.selectedMonth ? 'paid' : (ym === prev.selectedMonth ? 'paid' : 'pending'),
+          owner: 'partner2',
+          paidBy: 'partner2',
+          paymentMethod: 'PIX'
+        });
+      }
+
+      // Doação especial / Caridade
+      const donIdx = newTransactions.findIndex(
+        (t) => t.id === `tx-don-${ym}` || (t.category === 'dizimo' && t.title?.includes('Doações Especiais') && t.dueDate?.startsWith(ym))
+      );
+      if (don > 0) {
+        if (donIdx >= 0) {
+          newTransactions[donIdx] = { ...newTransactions[donIdx], amount: don };
+        } else {
+          newTransactions.push({
+            id: `tx-don-${ym}`,
+            title: `Doações Especiais & Caridade — ${getMonthLabel(ym)}`,
+            type: 'expense',
+            category: 'dizimo',
+            amount: don,
+            dueDate: `${ym}-10`,
+            paidDate: '',
+            status: 'pending',
+            owner: 'joint',
+            paidBy: 'partner1',
+            paymentMethod: 'PIX'
+          });
         }
-        return t;
-      });
+      } else if (donIdx >= 0) {
+        newTransactions.splice(donIdx, 1);
+      }
 
       return {
         ...prev,
@@ -909,6 +1007,7 @@ export default function App() {
           <ExtraIncomeView
             state={state}
             onAddExtraIncome={handleAddExtraIncome}
+            onUpdateExtraIncome={handleUpdateExtraIncome}
             onToggleExtraIncomeStatus={handleToggleExtraIncomeStatus}
             onDeleteExtraIncome={handleDeleteExtraIncome}
           />
@@ -1303,7 +1402,7 @@ export default function App() {
                     step="0.01"
                     min="0"
                     required
-                    placeholder="Ex: 5900.00"
+                    placeholder="Ex: 6500.00"
                     value={monthIncomeForm.partner1Income}
                     onChange={(e) =>
                       setMonthIncomeForm({
@@ -1323,7 +1422,7 @@ export default function App() {
                     step="0.01"
                     min="0"
                     required
-                    placeholder="Ex: 700.00"
+                    placeholder="Ex: 5500.00"
                     value={monthIncomeForm.partner2Income}
                     onChange={(e) =>
                       setMonthIncomeForm({
@@ -1357,6 +1456,7 @@ export default function App() {
 
               {/* SIMULAÇÃO EM TEMPO REAL DAS PRIMÍCIAS DESTE MÊS */}
               {(() => {
+                const ym = state.selectedMonth;
                 const p1 = Number(monthIncomeForm.partner1Income) || 0;
                 const p2 = Number(monthIncomeForm.partner2Income) || 0;
                 const don = Number(monthIncomeForm.donationAmount) || 0;
@@ -1370,10 +1470,19 @@ export default function App() {
                   ? Number(state.couple.partner2OfferingPercent ?? 5)
                   : 0;
 
-                const p1TitheTotal = (p1 * (tithePct + p1Off)) / 100;
-                const p2TitheTotal = (p2 * (tithePct + p2Off)) / 100;
-                const totalIncomeM = p1 + p2;
-                const totalTitheDon = p1TitheTotal + p2TitheTotal + don;
+                const monthExtras = (state.extraIncomes || []).filter((i) => i.date?.startsWith(ym));
+                const p1Extra = state.couple.includeExtraInTithe
+                  ? monthExtras.filter((i) => i.owner === 'partner1' && i.status === 'received').reduce((a, i) => a + Number(i.amount || 0), 0)
+                  : 0;
+                const p2Extra = state.couple.includeExtraInTithe
+                  ? monthExtras.filter((i) => i.owner === 'partner2' && i.status === 'received').reduce((a, i) => a + Number(i.amount || 0), 0)
+                  : 0;
+                const totalExtraM = p1Extra + p2Extra;
+
+                const p1TitheTotal = Number((((p1 + p1Extra) * (tithePct + p1Off)) / 100).toFixed(2));
+                const p2TitheTotal = Number((((p2 + p2Extra) * (tithePct + p2Off)) / 100).toFixed(2));
+                const totalIncomeM = p1 + p2 + totalExtraM;
+                const totalTitheDon = Number((p1TitheTotal + p2TitheTotal + don).toFixed(2));
                 const netIncomeM = totalIncomeM - totalTitheDon;
 
                 return (
@@ -1391,7 +1500,7 @@ export default function App() {
                     </div>
                     <div className="form-grid-3">
                       <div className="preview-pill">
-                        <span>Total Renda Salários</span>
+                        <span>Renda Total (Salários{totalExtraM > 0 ? ' + Extras' : ''})</span>
                         <strong className="text-emerald">{formatCurrency(totalIncomeM)}</strong>
                       </div>
                       <div className="preview-pill">
@@ -1402,7 +1511,7 @@ export default function App() {
                         </small>
                       </div>
                       <div className="preview-pill">
-                        <span>Sobra Líquida Salários</span>
+                        <span>Sobra Líquida</span>
                         <strong className="text-emerald">{formatCurrency(netIncomeM)}</strong>
                       </div>
                     </div>

@@ -63,7 +63,7 @@ export const THEMES = [
 ];
 
 export const INITIAL_STATE = {
-  version: '1.3.0',
+  version: '1.4.0',
   selectedMonth: '2026-11',
   ownerFilter: 'all', // 'all' | 'joint' | 'partner1' | 'partner2'
   couple: {
@@ -83,8 +83,8 @@ export const INITIAL_STATE = {
   },
   monthlyIncomes: {
     '2026-11': {
-      partner1Income: 5900,
-      partner2Income: 700,
+      partner1Income: 6500,
+      partner2Income: 5500,
       donationAmount: 0
     },
     '2026-10': {

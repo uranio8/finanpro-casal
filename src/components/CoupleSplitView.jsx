@@ -19,20 +19,39 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
     [state, selectedMonth]
   );
 
-  const p1Extra = monthExtras
-    .filter((i) => i.owner === 'partner1')
+  // Rendas extras recebidas e pendentes
+  const p1ExtraReceived = monthExtras
+    .filter((i) => i.owner === 'partner1' && i.status === 'received')
     .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+  const p1ExtraPending = monthExtras
+    .filter((i) => i.owner === 'partner1' && i.status === 'pending')
+    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+  const p1ExtraTotal = p1ExtraReceived + p1ExtraPending;
 
-  const p2Extra = monthExtras
-    .filter((i) => i.owner === 'partner2')
+  const p2ExtraReceived = monthExtras
+    .filter((i) => i.owner === 'partner2' && i.status === 'received')
     .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+  const p2ExtraPending = monthExtras
+    .filter((i) => i.owner === 'partner2' && i.status === 'pending')
+    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+  const p2ExtraTotal = p2ExtraReceived + p2ExtraPending;
+
+  // Receitas Avulsas adicionadas diretamente via "+ Nova Receita" em Lançamentos (excluindo salários)
+  const p1AdhocIncomes = monthTxs
+    .filter((t) => t.type === 'income' && t.category !== 'salario' && t.owner === 'partner1')
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+  const p2AdhocIncomes = monthTxs
+    .filter((t) => t.type === 'income' && t.category !== 'salario' && t.owner === 'partner2')
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
   const p1Salary = effectiveMonthIncome.partner1Income;
   const p2Salary = effectiveMonthIncome.partner2Income;
   const donationAmount = effectiveMonthIncome.donationAmount;
 
-  const p1Income = p1Salary + p1Extra;
-  const p2Income = p2Salary + p2Extra;
+  // Renda Total do Mês (Salário + Renda Extra + Receitas Avulsas)
+  const p1Income = p1Salary + p1ExtraTotal + p1AdhocIncomes;
+  const p2Income = p2Salary + p2ExtraTotal + p2AdhocIncomes;
   const totalCoupleIncome = p1Income + p2Income;
 
   // Dízimo (10%) + Oferta (%) per partner + Doações adicionais
@@ -40,12 +59,13 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
   const p1OffPct = couple.titheEnabled ? Number(couple.partner1OfferingPercent ?? 5) : 0;
   const p2OffPct = couple.titheEnabled ? Number(couple.partner2OfferingPercent ?? 5) : 0;
 
-  const p1TitheBase = p1Salary + (couple.includeExtraInTithe ? p1Extra : 0);
-  const p2TitheBase = p2Salary + (couple.includeExtraInTithe ? p2Extra : 0);
+  // Dízimo sobre Renda Extra incide sobre o montante efetivamente recebido
+  const p1TitheBase = p1Salary + (couple.includeExtraInTithe ? p1ExtraReceived : 0);
+  const p2TitheBase = p2Salary + (couple.includeExtraInTithe ? p2ExtraReceived : 0);
 
-  const p1Consecrated = (p1TitheBase * (tithePct + p1OffPct)) / 100;
-  const p2Consecrated = (p2TitheBase * (tithePct + p2OffPct)) / 100;
-  const totalConsecrated = p1Consecrated + p2Consecrated + donationAmount;
+  const p1Consecrated = Number(((p1TitheBase * (tithePct + p1OffPct)) / 100).toFixed(2));
+  const p2Consecrated = Number(((p2TitheBase * (tithePct + p2OffPct)) / 100).toFixed(2));
+  const totalConsecrated = Number((p1Consecrated + p2Consecrated + donationAmount).toFixed(2));
 
   const isUnified = couple.splitMode === 'unified';
 
@@ -114,7 +134,7 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
         `❤️ *Zero acertos ou transferências: todo o dinheiro pertence aos dois!*`;
     } else {
       const settlementText =
-        Math.abs(p1BalanceDiff) < 1
+        Math.abs(p1BalanceDiff) < 0.01
           ? 'Contas 100% equilibradas!'
           : p1BalanceDiff > 0
           ? `${couple.partner2Name} transfere ${formatCurrency(p1BalanceDiff)} para ${couple.partner1Name}`
@@ -217,7 +237,7 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
             <span className="badge-pill badge-emerald">
               Resultado do Acerto das Contas da Casa ({getMonthLabel(selectedMonth)})
             </span>
-            {Math.abs(p1BalanceDiff) < 1 ? (
+            {Math.abs(p1BalanceDiff) < 0.01 ? (
               <h3>Tudo perfeitamente equilibrado! Ninguém precisa transferir nada.</h3>
             ) : p1BalanceDiff > 0 ? (
               <h3>
@@ -280,7 +300,9 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
             <div>
               <h3>{couple.partner1Name}</h3>
               <small>
-                Salário: {formatCurrency(p1Salary)} + Extra: {formatCurrency(p1Extra)} ={' '}
+                Salário: {formatCurrency(p1Salary)} + Extras:{' '}
+                {formatCurrency(p1ExtraTotal + p1AdhocIncomes)}
+                {p1ExtraPending > 0 && ` (${formatCurrency(p1ExtraPending)} a receber)`} ={' '}
                 <strong>{formatCurrency(p1Income)}</strong>
               </small>
             </div>
@@ -339,7 +361,9 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
             <div>
               <h3>{couple.partner2Name}</h3>
               <small>
-                Salário: {formatCurrency(p2Salary)} + Extra: {formatCurrency(p2Extra)} ={' '}
+                Salário: {formatCurrency(p2Salary)} + Extras:{' '}
+                {formatCurrency(p2ExtraTotal + p2AdhocIncomes)}
+                {p2ExtraPending > 0 && ` (${formatCurrency(p2ExtraPending)} a receber)`} ={' '}
                 <strong>{formatCurrency(p2Income)}</strong>
               </small>
             </div>
