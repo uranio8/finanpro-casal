@@ -10,6 +10,7 @@ export default function SettingsView({
   onExportBackup,
   onImportBackup,
   onResetToDemo,
+  onClearAllData,
   supabaseConfig,
   cloudSyncStatus,
   onSaveSupabaseConfig,
@@ -432,6 +433,16 @@ export default function SettingsView({
               </div>
               <button className="btn btn-soft" onClick={onResetToDemo}>
                 <i className="fa-solid fa-rotate-left"></i> Restaurar Exemplo
+              </button>
+            </div>
+
+            <div className="backup-item">
+              <div>
+                <strong>Zerar Tudo (Começar do Zero)</strong>
+                <p>Apaga lançamentos, parcelamentos, cartões, metas e salários para registrar seus próprios gastos.</p>
+              </div>
+              <button className="btn btn-danger" onClick={onClearAllData}>
+                <i className="fa-solid fa-broom"></i> Zerar Tudo
               </button>
             </div>
           </div>

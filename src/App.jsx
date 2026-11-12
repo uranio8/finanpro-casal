@@ -1542,6 +1542,46 @@ export default function App() {
     }
   };
 
+  const handleClearAllData = () => {
+    if (
+      window.confirm(
+        'Atenção: deseja zerar TODOS os dados financeiros (lançamentos, parcelamentos, cartões, metas, rendas extras e salários)?\n\nRecomendamos exportar um backup .json antes se quiser guardar o histórico atual. Essa ação não pode ser desfeita.'
+      )
+    ) {
+      setState((prev) => {
+        const clearedState = {
+          ...prev,
+          couple: {
+            ...prev.couple,
+            partner1Income: 0,
+            partner2Income: 0,
+            donationAmount: 0,
+            monthlySavingsTarget: 0
+          },
+          monthlyIncomes: {},
+          monthlySettlements: {},
+          extraIncomes: [],
+          transactions: [],
+          commitments: [],
+          cards: [],
+          goals: [],
+          checklist: (prev.checklist || INITIAL_STATE.checklist).map((item) => ({
+            ...item,
+            done: false
+          }))
+        };
+        return {
+          ...clearedState,
+          transactions: syncMonthIncomeAndTitheTransactions(
+            clearedState,
+            clearedState.selectedMonth || '2026-11'
+          )
+        };
+      });
+      showToast('Sistema zerado! Pronto para registrar seus gastos reais.');
+    }
+  };
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'fa-chart-line' },
     { id: 'extra-income', label: 'Renda Extra & Aulas', icon: 'fa-chalkboard-user' },
@@ -1798,6 +1838,7 @@ export default function App() {
             onExportBackup={handleExportBackup}
             onImportBackup={handleImportBackup}
             onResetToDemo={handleResetToDemo}
+            onClearAllData={handleClearAllData}
             supabaseConfig={supabaseConfig}
             cloudSyncStatus={cloudSyncStatus}
             onSaveSupabaseConfig={handleSaveSupabaseConfig}

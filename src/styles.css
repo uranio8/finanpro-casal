@@ -959,6 +959,18 @@ body {
   color: var(--primary);
 }
 
+.btn-danger {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.28);
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+
 .btn-emerald-whatsapp {
   background: #16a34a;
   color: #ffffff;
