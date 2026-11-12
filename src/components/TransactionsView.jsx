@@ -28,6 +28,25 @@ export default function TransactionsView({
 
   const { selectedMonth, transactions, couple, cards = [], ownerFilter } = state;
 
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
+
+  // Fechar modal de quitação ao pressionar tecla Escape (WCAG)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && payModalTx) {
+        setPayModalTx(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [payModalTx]);
+
   // Limpa o filtro de dia selecionado ao navegar para outro mês
   useEffect(() => {
     setSelectedDay(null);
@@ -200,13 +219,14 @@ export default function TransactionsView({
               return <div key={cell.key} className="cal-day empty" />;
             }
             const isSelected = selectedDay === cell.dateStr;
+            const isToday = cell.dateStr === todayStr;
             const hasExpenses = cell.expenseCount > 0;
             const hasPending = cell.pendingCount > 0;
 
             return (
               <div
                 key={cell.dateStr}
-                className={`cal-day ${isSelected ? 'selected' : ''} ${
+                className={`cal-day ${isSelected ? 'selected' : ''} ${isToday ? 'is-today' : ''} ${
                   hasExpenses ? 'has-events' : ''
                 }`}
                 onClick={() =>
@@ -215,11 +235,14 @@ export default function TransactionsView({
               >
                 <div className="cal-day-top">
                   <span className="cal-day-num">{cell.day}</span>
-                  {cell.incomeCount > 0 && (
-                    <span className="cal-income-dot" title="Receita neste dia">
-                      +R$
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {isToday && <span className="cal-today-badge">Hoje</span>}
+                    {cell.incomeCount > 0 && (
+                      <span className="cal-income-dot" title="Receita neste dia">
+                        +R$
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {cell.cardsDueToday && cell.cardsDueToday.length > 0 && (
                   <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--primary)' }}>
@@ -311,158 +334,160 @@ export default function TransactionsView({
         </div>
 
         {/* LISTAGEM DE LANÇAMENTOS */}
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th className="text-center">Vencimento</th>
-              <th>Descrição</th>
-              <th>Categoria</th>
-              <th className="text-center">Divisão</th>
-              <th className="text-center">Onde foi feito (Cartão / Meio)</th>
-              <th className="text-center">Valor</th>
-              <th className="text-center">Status (Clique Rápido)</th>
-              <th className="text-center">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTransactions.map((tx) => {
-              const allCats = [...CATEGORIES, ...INCOME_CATEGORIES];
-              const cat = allCats.find((c) => c.id === tx.category) || CATEGORIES[8];
-              const cardObj = cards.find((c) => c.id === tx.cardId) || null;
+        <div className="table-responsive">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="text-center">Vencimento</th>
+                <th>Descrição</th>
+                <th>Categoria</th>
+                <th className="text-center">Divisão</th>
+                <th className="text-center">Onde foi feito (Cartão / Meio)</th>
+                <th className="text-center">Valor</th>
+                <th className="text-center">Status (Clique Rápido)</th>
+                <th className="text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTransactions.map((tx) => {
+                const allCats = [...CATEGORIES, ...INCOME_CATEGORIES];
+                const cat = allCats.find((c) => c.id === tx.category) || CATEGORIES[8];
+                const cardObj = cards.find((c) => c.id === tx.cardId) || null;
 
-              return (
-                <tr key={tx.id}>
-                  <td className="text-center">
-                    <strong className="font-mono-val">{formatDateBR(tx.dueDate)}</strong>
-                  </td>
-                  <td>
-                    <div className="cell-title-with-icon">
-                      <span
-                        className="cat-icon-badge"
-                        style={{ backgroundColor: `${cat.color}20`, color: cat.color }}
-                      >
-                        <i className={`fa-solid ${cat.icon}`}></i>
-                      </span>
-                      <div>
-                        <strong>{tx.title}</strong>
-                        <small>
-                          {tx.installmentNumber === 0
-                            ? 'Entrada Inicial'
-                            : tx.totalInstallments
-                            ? `Parcela ${tx.installmentNumber}/${tx.totalInstallments}`
-                            : tx.type === 'income'
-                            ? 'Entrada / Receita'
-                            : 'Gasto do Mês'}
-                          {tx.receiptFileName ? ` · 📎 ${tx.receiptFileName}` : ''}
-                        </small>
+                return (
+                  <tr key={tx.id}>
+                    <td className="text-center">
+                      <strong className="font-mono-val">{formatDateBR(tx.dueDate)}</strong>
+                    </td>
+                    <td>
+                      <div className="cell-title-with-icon">
+                        <span
+                          className="cat-icon-badge"
+                          style={{ backgroundColor: `${cat.color}20`, color: cat.color }}
+                        >
+                          <i className={`fa-solid ${cat.icon}`}></i>
+                        </span>
+                        <div>
+                          <strong>{tx.title}</strong>
+                          <small>
+                            {tx.installmentNumber === 0
+                              ? 'Entrada Inicial'
+                              : tx.totalInstallments
+                              ? `Parcela ${tx.installmentNumber}/${tx.totalInstallments}`
+                              : tx.type === 'income'
+                              ? 'Entrada / Receita'
+                              : 'Gasto do Mês'}
+                            {tx.receiptFileName ? ` · 📎 ${tx.receiptFileName}` : ''}
+                          </small>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td>{cat.name}</td>
-                  <td className="text-center">
-                    <span className={`owner-badge ${tx.owner}`}>
-                      {tx.owner === 'joint'
-                        ? 'Conjunto (Casa)'
-                        : tx.owner === 'partner1'
-                        ? couple.partner1Name
-                        : couple.partner2Name}
-                    </span>
-                  </td>
-                  <td className="text-center">
-                    {cardObj ? (
-                      <span
-                        className="method-pill"
-                        style={{
-                          borderColor: cardObj.color,
-                          color: cardObj.color,
-                          backgroundColor: `${cardObj.color}15`,
-                          fontWeight: 700
-                        }}
-                      >
-                        <i className="fa-solid fa-credit-card"></i>{' '}
-                        {cardObj.name.includes('Inter')
-                          ? 'Inter Platinum'
-                          : cardObj.name.includes('Nubank')
-                          ? 'Nubank Chroma'
-                          : cardObj.name}
+                    </td>
+                    <td>{cat.name}</td>
+                    <td className="text-center">
+                      <span className={`owner-badge ${tx.owner}`}>
+                        {tx.owner === 'joint'
+                          ? 'Conjunto (Casa)'
+                          : tx.owner === 'partner1'
+                          ? couple.partner1Name
+                          : couple.partner2Name}
                       </span>
-                    ) : (
-                      <span className="method-pill">{tx.paymentMethod || 'PIX'}</span>
-                    )}
-                  </td>
-                  <td className="text-center">
-                    <strong
-                      className={`font-mono-val ${
-                        tx.type === 'income' ? 'text-emerald' : ''
-                      }`}
-                    >
-                      {tx.type === 'income' ? '+ ' : ''}
-                      {formatCurrency(tx.amount)}
-                    </strong>
-                  </td>
-                  <td className="text-center">
-                    <button
-                      className={`status-toggle-btn ${tx.status}`}
-                      title="Clique para alternar entre Pago e Pendente"
-                      onClick={() =>
-                        onToggleTransactionStatus(tx.id, {
-                          status: tx.status === 'paid' ? 'pending' : 'paid',
-                          paidDate: tx.status === 'paid' ? '' : (tx.dueDate || `${selectedMonth}-10`)
-                        })
-                      }
-                    >
-                      <i
-                        className={`fa-solid ${
-                          tx.status === 'paid' ? 'fa-circle-check' : 'fa-clock'
+                    </td>
+                    <td className="text-center">
+                      {cardObj ? (
+                        <span
+                          className="method-pill"
+                          style={{
+                            borderColor: cardObj.color,
+                            color: cardObj.color,
+                            backgroundColor: `${cardObj.color}15`,
+                            fontWeight: 700
+                          }}
+                        >
+                          <i className="fa-solid fa-credit-card"></i>{' '}
+                          {cardObj.name.includes('Inter')
+                            ? 'Inter Platinum'
+                            : cardObj.name.includes('Nubank')
+                            ? 'Nubank Chroma'
+                            : cardObj.name}
+                        </span>
+                      ) : (
+                        <span className="method-pill">{tx.paymentMethod || 'PIX'}</span>
+                      )}
+                    </td>
+                    <td className="text-center">
+                      <strong
+                        className={`font-mono-val ${
+                          tx.type === 'income' ? 'text-emerald' : ''
                         }`}
-                      ></i>
-                      {tx.status === 'paid'
-                        ? tx.type === 'income'
-                          ? 'Recebido'
-                          : 'Pago'
-                        : 'Pendente'}
-                    </button>
-                  </td>
-                  <td className="text-center">
-                    <div className="row-actions">
-                      {tx.status === 'pending' && tx.type === 'expense' && (
-                        <button
-                          className="btn btn-sm btn-primary"
-                          onClick={() => openConfirmPayModal(tx)}
-                        >
-                          <i className="fa-solid fa-receipt"></i> Quitar
-                        </button>
-                      )}
-                      {onOpenEditTransaction && (
-                        <button
-                          className="icon-btn"
-                          title="Editar Lançamento"
-                          onClick={() => onOpenEditTransaction(tx)}
-                        >
-                          <i className="fa-solid fa-pen-to-square"></i>
-                        </button>
-                      )}
-                      <button
-                        className="icon-btn danger"
-                        title="Excluir Lançamento"
-                        onClick={() => onDeleteTransaction(tx.id)}
                       >
-                        <i className="fa-solid fa-trash"></i>
+                        {tx.type === 'income' ? '+ ' : ''}
+                        {formatCurrency(tx.amount)}
+                      </strong>
+                    </td>
+                    <td className="text-center">
+                      <button
+                        className={`status-toggle-btn ${tx.status}`}
+                        title="Clique para alternar entre Pago e Pendente"
+                        onClick={() =>
+                          onToggleTransactionStatus(tx.id, {
+                            status: tx.status === 'paid' ? 'pending' : 'paid',
+                            paidDate: tx.status === 'paid' ? '' : (tx.dueDate || `${selectedMonth}-10`)
+                          })
+                        }
+                      >
+                        <i
+                          className={`fa-solid ${
+                            tx.status === 'paid' ? 'fa-circle-check' : 'fa-clock'
+                          }`}
+                        ></i>
+                        {tx.status === 'paid'
+                          ? tx.type === 'income'
+                            ? 'Recebido'
+                            : 'Pago'
+                          : 'Pendente'}
                       </button>
-                    </div>
+                    </td>
+                    <td className="text-center">
+                      <div className="row-actions">
+                        {tx.status === 'pending' && tx.type === 'expense' && (
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => openConfirmPayModal(tx)}
+                          >
+                            <i className="fa-solid fa-receipt"></i> Quitar
+                          </button>
+                        )}
+                        {onOpenEditTransaction && (
+                          <button
+                            className="icon-btn"
+                            title="Editar Lançamento"
+                            onClick={() => onOpenEditTransaction(tx)}
+                          >
+                            <i className="fa-solid fa-pen-to-square"></i>
+                          </button>
+                        )}
+                        <button
+                          className="icon-btn danger"
+                          title="Excluir Lançamento"
+                          onClick={() => onDeleteTransaction(tx.id)}
+                        >
+                          <i className="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredTransactions.length === 0 && (
+                <tr>
+                  <td colSpan="8" className="empty-table-cell">
+                    Nenhum lançamento encontrado para os filtros atuais.
                   </td>
                 </tr>
-              );
-            })}
-            {filteredTransactions.length === 0 && (
-              <tr>
-                <td colSpan="8" className="empty-table-cell">
-                  Nenhum lançamento encontrado para os filtros atuais.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* MODAL DE QUITAÇÃO COM COMPROVANTE */}

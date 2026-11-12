@@ -235,6 +235,28 @@ export default function App() {
     }
   }, [state]);
 
+  // Fechar modais ao pressionar tecla Escape (Acessibilidade WCAG)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (txModal.open) {
+          setTxModal({ open: false, type: 'expense', editingId: null, commitmentId: null });
+        }
+        if (isMonthIncomeModalOpen) {
+          setIsMonthIncomeModalOpen(false);
+        }
+        if (isReportModalOpen) {
+          setIsReportModalOpen(false);
+        }
+        if (fabOpen) {
+          setFabOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [txModal.open, isMonthIncomeModalOpen, isReportModalOpen, fabOpen]);
+
   const handleSaveSupabaseConfig = (newCfg) => {
     const saved = saveSupabaseConfig(newCfg);
     setSupabaseConfig(saved);
@@ -2033,10 +2055,18 @@ export default function App() {
                 </div>
               </div>
 
-              {/* DIVISÃO DO GASTO */}
+              {/* DIVISÃO DO GASTO / RECEITA */}
               <div className="form-grid-2">
-                <div className="form-group">
-                  <label htmlFor="tx-owner">Divisão da Despesa</label>
+                <div
+                  className={`form-group ${
+                    txForm.paymentMethod !== 'Cartão de Crédito' || txForm.type === 'income'
+                      ? 'grid-col-full'
+                      : ''
+                  }`}
+                >
+                  <label htmlFor="tx-owner">
+                    {txForm.type === 'income' ? 'Quem recebeu a receita? *' : 'Divisão da Despesa'}
+                  </label>
                   <select
                     id="tx-owner"
                     value={txForm.owner}
@@ -2048,7 +2078,7 @@ export default function App() {
                   </select>
                 </div>
 
-                {txForm.paymentMethod === 'Cartão de Crédito' && (
+                {txForm.type !== 'income' && txForm.paymentMethod === 'Cartão de Crédito' && (
                   <div className="form-group">
                     <label htmlFor="tx-paidby">Titular que Paga a Fatura</label>
                     <select
