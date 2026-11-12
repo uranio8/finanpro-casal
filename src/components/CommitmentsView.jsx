@@ -19,7 +19,7 @@ export default function CommitmentsView({
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'installment' | 'recurring'
   const [cardFilter, setCardFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'settled' | 'active'
-  const [selectedDetails, setSelectedDetails] = useState(null);
+  const [selectedDetailsId, setSelectedDetailsId] = useState(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const modalVisible = isModalOpen || externalModalOpen;
@@ -75,6 +75,9 @@ export default function CommitmentsView({
           .filter((t) => t.commitmentId === c.id)
           .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
+        const regularLinked = linked.filter((t) => t.installmentNumber > 0);
+        const hasDownPaymentTx = linked.some((t) => t.installmentNumber === 0);
+
         const totalScheduled =
           linked.length > 0
             ? linked.reduce((acc, t) => acc + Number(t.amount || 0), 0)
@@ -88,14 +91,16 @@ export default function CommitmentsView({
         const progressPct =
           totalScheduled > 0 ? Math.min(100, Math.round((totalPaid / totalScheduled) * 100)) : 0;
 
-        const paidInstallmentsCount = linked.filter((t) => t.status === 'paid').length;
+        const paidInstallmentsCount = regularLinked.filter((t) => t.status === 'paid').length;
+        const totalInstallmentsCount = regularLinked.length || c.installmentsCount || 1;
         const isSettled = remaining <= 0.01 && linked.length > 0;
 
+        // Prioritize actual real last transaction date so editing card due date propagates immediately!
         const computedEndDate =
-          c.endDate ||
-          (linked.length > 0
+          linked.length > 0
             ? linked[linked.length - 1].dueDate
-            : addMonthsToDate(c.startDate, Math.max(0, (c.installmentsCount || 1) - 1)));
+            : c.endDate ||
+              addMonthsToDate(c.startDate, Math.max(0, (c.installmentsCount || 1) - 1));
 
         const cardObj = cards.find((cd) => cd.id === c.cardId) || null;
 
@@ -103,12 +108,13 @@ export default function CommitmentsView({
           ...c,
           cardObj,
           linked,
+          hasDownPaymentTx,
           totalScheduled,
           totalPaid,
           remaining,
           progressPct,
           paidInstallmentsCount,
-          totalInstallmentsCount: linked.length || c.installmentsCount,
+          totalInstallmentsCount,
           isSettled,
           computedEndDate
         };
@@ -129,17 +135,23 @@ export default function CommitmentsView({
 
   // Dynamic Preview of Installments inside Modal
   const installmentPreview = useMemo(() => {
-    const total = Number(form.totalAmount) || 0;
-    const effectiveDownPayment = form.hasDownPayment ? Number(form.downPayment) || 0 : 0;
+    const rawVal = Number(form.totalAmount) || 0;
+    const isRecurring = form.type === 'recurring';
+    const effectiveDownPayment = (!isRecurring && form.hasDownPayment) ? Number(form.downPayment) || 0 : 0;
     const count = Math.max(1, parseInt(form.installmentsCount, 10) || 1);
 
-    if (total <= 0) return { list: [], endDate: form.startDate, valid: false };
+    if (rawVal <= 0) return { list: [], endDate: form.startDate, valid: false, totalCalculated: 0 };
 
-    const remainingToParcel = Math.max(0, total - effectiveDownPayment);
-    const baseInstallment = Math.floor((remainingToParcel / count) * 100) / 100;
+    // For recurring accounts, rawVal is the monthly fee! Total is monthlyFee * count.
+    // For installment purchases, rawVal is the total purchase value!
+    const totalContract = isRecurring ? Number((rawVal * count).toFixed(2)) : rawVal;
+
+    const remainingToParcel = Math.max(0, totalContract - effectiveDownPayment);
+    const baseInstallment = isRecurring ? rawVal : Math.floor((remainingToParcel / count) * 100) / 100;
     const list = [];
 
-    if (form.hasDownPayment && effectiveDownPayment > 0) {
+    const hasValidDown = !isRecurring && form.hasDownPayment && effectiveDownPayment > 0;
+    if (hasValidDown) {
       list.push({
         number: 0,
         label: 'Entrada Inicial',
@@ -151,14 +163,17 @@ export default function CommitmentsView({
     let sumSoFar = effectiveDownPayment;
     for (let i = 1; i <= count; i++) {
       const isLast = i === count;
-      const amount = isLast
-        ? Number((total - sumSoFar).toFixed(2))
+      const amount = isRecurring
+        ? rawVal
+        : isLast
+        ? Number((totalContract - sumSoFar).toFixed(2))
         : baseInstallment;
+
       sumSoFar += amount;
-      const dueDate = addMonthsToDate(form.startDate, form.hasDownPayment ? i : i - 1);
+      const dueDate = addMonthsToDate(form.startDate, hasValidDown ? i : i - 1);
       list.push({
         number: i,
-        label: `Parcela ${i}/${count}`,
+        label: isRecurring ? `Mensalidade ${i}/${count}` : `Parcela ${i}/${count}`,
         amount,
         dueDate
       });
@@ -168,7 +183,8 @@ export default function CommitmentsView({
     return {
       list,
       endDate: lastDate,
-      valid: effectiveDownPayment < total
+      totalCalculated: totalContract,
+      valid: effectiveDownPayment < totalContract
     };
   }, [form]);
 
@@ -183,12 +199,13 @@ export default function CommitmentsView({
   const handleSubmit = (e) => {
     e.preventDefault();
     const total = Number(form.totalAmount);
+    const isRecurring = form.type === 'recurring';
     if (!form.title.trim() || total <= 0 || !form.startDate) return;
 
     onAddCommitment({
       ...form,
-      totalAmount: total,
-      downPayment: form.hasDownPayment ? Number(form.downPayment) || 0 : 0,
+      totalAmount: installmentPreview.totalCalculated || total,
+      downPayment: (!isRecurring && form.hasDownPayment) ? Number(form.downPayment) || 0 : 0,
       installmentsCount: parseInt(form.installmentsCount, 10) || 1,
       endDate: installmentPreview.endDate,
       generatedInstallments: installmentPreview.list
@@ -255,8 +272,8 @@ export default function CommitmentsView({
             <i className="fa-solid fa-file-contract"></i> Contas Fixas &amp; Compras Parceladas nos Cartões
           </h2>
           <p>
-            Cadastre suas compras parceladas no <strong>Inter Platinum</strong> ou{' '}
-            <strong>Nubank Chroma</strong> e acompanhe quando cada parcelamento termina!
+            Cadastre suas compras parceladas nos cartões{' '}
+            <strong>{cards.map((c) => c.name.split(' ')[0]).join(' e ')}</strong> e acompanhe quando cada parcelamento termina!
           </p>
         </div>
         <div className="header-btns">
@@ -424,6 +441,7 @@ export default function CommitmentsView({
                       <div className="table-progress-labels">
                         <span>
                           {item.paidInstallmentsCount}/{item.totalInstallmentsCount} parc.
+                          {item.hasDownPaymentTx && <small style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '3px' }}>+ Ent.</small>}
                         </span>
                         <span>{item.progressPct}%</span>
                       </div>
@@ -440,7 +458,7 @@ export default function CommitmentsView({
                       <button
                         className="icon-btn"
                         title="Ver Cronograma de Parcelas"
-                        onClick={() => setSelectedDetails(item)}
+                        onClick={() => setSelectedDetailsId(item.id)}
                       >
                         <i className="fa-solid fa-eye"></i>
                       </button>
@@ -508,7 +526,34 @@ export default function CommitmentsView({
                 </div>
               </div>
 
-              <div className="form-grid-3">
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label htmlFor="comm-type">Tipo de Compromisso *</label>
+                  <select
+                    id="comm-type"
+                    value={form.type}
+                    onChange={(e) => setForm({ ...form, type: e.target.value })}
+                  >
+                    <option value="installment">🛍️ Compra Parcelada</option>
+                    <option value="recurring">🔄 Conta Fixa Recorrente / Assinatura</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="comm-owner">De quem é este gasto? *</label>
+                  <select
+                    id="comm-owner"
+                    value={form.owner}
+                    onChange={(e) => setForm({ ...form, owner: e.target.value })}
+                  >
+                    <option value="joint">Conjunto da Casa (Dividido pelo Casal)</option>
+                    <option value="partner1">Individual — {couple.partner1Name}</option>
+                    <option value="partner2">Individual — {couple.partner2Name}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="comm-method">Onde foi feito o gasto? *</label>
                   <select
@@ -522,7 +567,9 @@ export default function CommitmentsView({
                       setForm((prev) => ({ ...prev, paymentMethod: method }));
                     }}
                   >
-                    <option value="Cartão de Crédito">💳 Cartão de Crédito (Inter / Nubank)</option>
+                    <option value="Cartão de Crédito">
+                      💳 Cartão de Crédito ({cards.map((c) => c.name.split(' ')[0]).join(' / ')})
+                    </option>
                     <option value="PIX">💠 PIX / Conta Corrente</option>
                     <option value="Boleto">📄 Boleto Bancário</option>
                     <option value="Débito Automático">🔄 Débito Automático</option>
@@ -546,45 +593,39 @@ export default function CommitmentsView({
                   </div>
                 ) : (
                   <div className="form-group">
-                    <label htmlFor="comm-type">Tipo de Compromisso</label>
-                    <select
-                      id="comm-type"
-                      value={form.type}
-                      onChange={(e) => setForm({ ...form, type: e.target.value })}
-                    >
-                      <option value="installment">Compra Parcelada</option>
-                      <option value="recurring">Conta Fixa Mensal</option>
-                    </select>
+                    <label htmlFor="comm-dummy-method">Forma de Liquidação</label>
+                    <input
+                      id="comm-dummy-method"
+                      type="text"
+                      disabled
+                      value={form.paymentMethod}
+                    />
                   </div>
                 )}
-
-                <div className="form-group">
-                  <label htmlFor="comm-owner">De quem é este gasto?</label>
-                  <select
-                    id="comm-owner"
-                    value={form.owner}
-                    onChange={(e) => setForm({ ...form, owner: e.target.value })}
-                  >
-                    <option value="joint">Conjunto da Casa (Dividido pelo Casal)</option>
-                    <option value="partner1">Individual — {couple.partner1Name}</option>
-                    <option value="partner2">Individual — {couple.partner2Name}</option>
-                  </select>
-                </div>
               </div>
 
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label htmlFor="comm-total">Valor Total da Compra / Compromisso (R$) *</label>
+                  <label htmlFor="comm-total">
+                    {form.type === 'recurring'
+                      ? 'Valor Mensal da Conta Fixa (R$) *'
+                      : 'Valor Total da Compra / Compromisso (R$) *'}
+                  </label>
                   <input
                     id="comm-total"
                     type="number"
                     step="0.01"
                     min="0.01"
                     required
-                    placeholder="Ex: 2400.00"
+                    placeholder={form.type === 'recurring' ? 'Ex: 200.00 (por mês)' : 'Ex: 2400.00 (total)'}
                     value={form.totalAmount}
                     onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
                   />
+                  {form.type === 'recurring' && Number(form.totalAmount) > 0 && (
+                    <small style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '2px', display: 'block' }}>
+                      Total projetado: {formatCurrency(Number(form.totalAmount) * (parseInt(form.installmentsCount, 10) || 1))} em {form.installmentsCount} meses.
+                    </small>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -605,21 +646,26 @@ export default function CommitmentsView({
               <div className="installment-plan-box">
                 <div className="flex-between">
                   <h4>
-                    <i className="fa-solid fa-calculator"></i> Plano de Parcelamento Automático
+                    <i className="fa-solid fa-calculator"></i>{' '}
+                    {form.type === 'recurring'
+                      ? 'Projeção das Mensalidades Recorrentes'
+                      : 'Plano de Parcelamento Automático'}
                   </h4>
-                  <label className="checkbox-inline" htmlFor="comm-has-down">
-                    <input
-                      id="comm-has-down"
-                      type="checkbox"
-                      checked={form.hasDownPayment}
-                      onChange={(e) => handleToggleDownPayment(e.target.checked)}
-                    />
-                    <span>Possui valor de entrada inicial?</span>
-                  </label>
+                  {form.type !== 'recurring' && (
+                    <label className="checkbox-inline" htmlFor="comm-has-down">
+                      <input
+                        id="comm-has-down"
+                        type="checkbox"
+                        checked={form.hasDownPayment}
+                        onChange={(e) => handleToggleDownPayment(e.target.checked)}
+                      />
+                      <span>Possui valor de entrada inicial?</span>
+                    </label>
+                  )}
                 </div>
 
                 <div className="form-grid-3" style={{ marginTop: '12px' }}>
-                  {form.hasDownPayment && (
+                  {form.type !== 'recurring' && form.hasDownPayment && (
                     <div className="form-group">
                       <label htmlFor="comm-down">Valor de Entrada (R$)</label>
                       <input
@@ -635,7 +681,9 @@ export default function CommitmentsView({
                   )}
 
                   <div className="form-group">
-                    <label htmlFor="comm-count">Quantidade de Parcelas (1x a 36x)</label>
+                    <label htmlFor="comm-count">
+                      {form.type === 'recurring' ? 'Meses de Duração (1 a 36 meses)' : 'Quantidade de Parcelas (1x a 36x)'}
+                    </label>
                     <select
                       id="comm-count"
                       value={form.installmentsCount}
@@ -643,14 +691,16 @@ export default function CommitmentsView({
                     >
                       {Array.from({ length: 36 }, (_, i) => i + 1).map((n) => (
                         <option key={n} value={n}>
-                          {n}x {n === 1 ? '(À Vista na Fatura)' : 'mensais'}
+                          {n}x {n === 1 ? (form.type === 'recurring' ? 'mês' : '(À Vista na Fatura)') : 'mensais'}
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div className="form-group">
-                    <label htmlFor="comm-end-preview">Data da Última Parcela (Calculada)</label>
+                    <label htmlFor="comm-end-preview">
+                      {form.type === 'recurring' ? 'Término Previsto (Calculado)' : 'Data da Última Parcela (Calculada)'}
+                    </label>
                     <input
                       id="comm-end-preview"
                       type="text"
@@ -663,7 +713,7 @@ export default function CommitmentsView({
                 {installmentPreview.list.length > 0 && (
                   <div className="preview-pills-wrap">
                     <small>
-                      Prévia do Cronograma Gerado ({installmentPreview.list.length} lançamentos):
+                      Prévia do Cronograma Gerado ({installmentPreview.list.length} {form.type === 'recurring' ? 'mensalidades' : 'lançamentos'}):
                     </small>
                     <div className="preview-pills-scroll">
                       {installmentPreview.list.map((p) => (
@@ -703,75 +753,77 @@ export default function CommitmentsView({
       )}
 
       {/* MODAL SECUNDÁRIO: DETALHES E CRONOGRAMA DE PARCELAS */}
-      {selectedDetails && (
-        <div className="modal-backdrop" onClick={() => setSelectedDetails(null)}>
-          <div className="modal-box lg" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div>
-                <h3>{selectedDetails.title}</h3>
-                <small>
-                  Prazo final: {formatDateBR(selectedDetails.computedEndDate)} · Progresso:{' '}
-                  {selectedDetails.progressPct}%
-                </small>
-              </div>
-              <button className="close-btn" onClick={() => setSelectedDetails(null)}>
-                <i className="fa-solid fa-xmark"></i>
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="kpi-grid-3" style={{ marginBottom: '16px' }}>
-                <div className="mini-kpi card">
-                  <span>Total Contratado</span>
-                  <strong>{formatCurrency(selectedDetails.totalScheduled)}</strong>
-                </div>
-                <div className="mini-kpi card">
-                  <span>Total Pago</span>
-                  <strong className="text-emerald">{formatCurrency(selectedDetails.totalPaid)}</strong>
-                </div>
-                <div className="mini-kpi card">
-                  <span>Saldo Restante</span>
-                  <strong className="text-amber">{formatCurrency(selectedDetails.remaining)}</strong>
-                </div>
-              </div>
+      {(() => {
+        const activeDetails = enrichedCommitments.find((c) => c.id === selectedDetailsId);
+        if (!activeDetails) return null;
 
-              <h4>Cronograma Completo de Parcelas</h4>
-              <div className="schedule-list">
-                {selectedDetails.linked.map((tx) => (
-                  <div key={tx.id} className="schedule-row">
-                    <div>
-                      <strong>
-                        {tx.installmentNumber === 0
-                          ? 'Entrada Inicial'
-                          : `Parcela ${tx.installmentNumber}/${tx.totalInstallments}`}
-                      </strong>
-                      <small>Vencimento: {formatDateBR(tx.dueDate)}</small>
-                    </div>
-                    <div className="schedule-row-right">
-                      <strong>{formatCurrency(tx.amount)}</strong>
-                      {tx.status === 'paid' ? (
-                        <span className="status-tag paid">
-                          <i className="fa-solid fa-check"></i> Pago em{' '}
-                          {formatDateBR(tx.paidDate || tx.dueDate)}
-                        </span>
-                      ) : (
-                        <button
-                          className="btn btn-sm btn-primary"
-                          onClick={() => {
-                            onQuickPayTransaction(tx.id);
-                            setSelectedDetails(null);
-                          }}
-                        >
-                          Dar Baixa Agora
-                        </button>
-                      )}
-                    </div>
+        return (
+          <div className="modal-backdrop" onClick={() => setSelectedDetailsId(null)}>
+            <div className="modal-box lg" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <h3>{activeDetails.title}</h3>
+                  <small>
+                    Prazo final: {formatDateBR(activeDetails.computedEndDate)} · Progresso:{' '}
+                    {activeDetails.progressPct}%
+                  </small>
+                </div>
+                <button className="close-btn" onClick={() => setSelectedDetailsId(null)}>
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <div className="modal-body">
+                <div className="kpi-grid-3" style={{ marginBottom: '16px' }}>
+                  <div className="mini-kpi card">
+                    <span>Total Contratado</span>
+                    <strong>{formatCurrency(activeDetails.totalScheduled)}</strong>
                   </div>
-                ))}
+                  <div className="mini-kpi card">
+                    <span>Total Pago</span>
+                    <strong className="text-emerald">{formatCurrency(activeDetails.totalPaid)}</strong>
+                  </div>
+                  <div className="mini-kpi card">
+                    <span>Saldo Restante</span>
+                    <strong className="text-amber">{formatCurrency(activeDetails.remaining)}</strong>
+                  </div>
+                </div>
+
+                <h4>Cronograma Completo de Parcelas</h4>
+                <div className="schedule-list">
+                  {activeDetails.linked.map((tx) => (
+                    <div key={tx.id} className="schedule-row">
+                      <div>
+                        <strong>
+                          {tx.installmentNumber === 0
+                            ? 'Entrada Inicial'
+                            : `Parcela ${tx.installmentNumber}/${tx.totalInstallments}`}
+                        </strong>
+                        <small>Vencimento: {formatDateBR(tx.dueDate)}</small>
+                      </div>
+                      <div className="schedule-row-right">
+                        <strong>{formatCurrency(tx.amount)}</strong>
+                        {tx.status === 'paid' ? (
+                          <span className="status-tag paid">
+                            <i className="fa-solid fa-check"></i> Pago em{' '}
+                            {formatDateBR(tx.paidDate || tx.dueDate)}
+                          </span>
+                        ) : (
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => onQuickPayTransaction(tx.id)}
+                          >
+                            Dar Baixa Agora
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -35,6 +35,8 @@ Toda alteração ou nova funcionalidade neste repositório DEVE respeitar as seg
 6. **Aprovação Prévia do Plano de Implementação (Mandatório):**
    * Antes de executar qualquer alteração no código-fonte, criação de componentes ou refatoração, o agente **DEVE SEMPRE apresentar previamente um plano de implementação claro e estruturado** (detalhando arquivos a modificar, lógica de negócio, impactos visuais e passos técnicos).
    * O agente deve **aguardar a confirmação e aceite explícito do usuário** antes de aplicar qualquer alteração nos arquivos do projeto.
+7. **Testes e Simulações em Segundo Plano (Headless):**
+   * Toda simulação, auditoria E2E ou teste de interface deve ser executado **exclusivamente em segundo plano (modo *headless* / background)**, sem abrir nem assumir o controle da janela visível do navegador do usuário.
 
 ---
 
@@ -75,11 +77,11 @@ Quando solicitado pelo usuário ou durante o fluxo de desenvolvimento de novas f
 ---
 
 ### 🧪 Agente 3: `qa-browser-tester`
-**Papel:** Engenheiro de QA & Testes E2E via Browser Subagent
+**Papel:** Engenheiro de QA & Testes E2E Automatizados em Segundo Plano (Headless)
 
 * **Escopo de Atuação:** Aplicação rodando em `http://localhost:5173` ou ambiente de produção.
 * **Responsabilidades:**
-  * Inspecionar a aplicação ao vivo utilizando o subagente `browser` (Chrome DevTools).
+  * **Execução Obrigatória em Segundo Plano (Headless):** Sempre executar simulações, auditorias e testes E2E em segundo plano (via scripts automatizados com navegador *headless* / Playwright / Puppeteer ou testes em background), **NUNCA abrindo ou tomando o controle da janela visível do navegador do usuário** para não interromper seu uso do computador.
   * Executar testes de estresse nos formulários (valores decimais quebrados, troca rápida de meses, exclusão de compromissos com parcelas pagas, filtros combinados no calendário).
   * Monitorar o Console do navegador e a aba Network para garantir zero erros de runtime, warnings do React ou bloqueios de requisição.
 

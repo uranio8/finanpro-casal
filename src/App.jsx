@@ -39,19 +39,32 @@ export default function App() {
           return cid;
         };
 
-        const migratedTransactions = Array.isArray(parsed.transactions)
+        // If local state is version < 1.3.0, upgrade demo commitments and transactions with the complete schedules
+        const needsVersion130Upgrade = !parsed.version || parsed.version < '1.3.0';
+
+        let migratedTransactions = Array.isArray(parsed.transactions)
           ? parsed.transactions.map((t) => ({
               ...t,
               cardId: mapCardId(t.cardId)
             }))
           : INITIAL_STATE.transactions;
 
-        const migratedCommitments = Array.isArray(parsed.commitments)
+        let migratedCommitments = Array.isArray(parsed.commitments)
           ? parsed.commitments.map((c) => ({
               ...c,
               cardId: mapCardId(c.cardId)
             }))
           : INITIAL_STATE.commitments;
+
+        if (needsVersion130Upgrade) {
+          // Replace demo commitments comm-1..comm-5 and merge missing demo transactions
+          const initialCommIds = new Set(INITIAL_STATE.commitments.map((c) => c.id));
+          const userCustomCommitments = migratedCommitments.filter((c) => !initialCommIds.has(c.id));
+          migratedCommitments = [...INITIAL_STATE.commitments, ...userCustomCommitments];
+
+          const userCustomTransactions = migratedTransactions.filter((t) => !t.commitmentId || !initialCommIds.has(t.commitmentId));
+          migratedTransactions = [...INITIAL_STATE.transactions, ...userCustomTransactions];
+        }
 
         return {
           ...INITIAL_STATE,
@@ -197,7 +210,11 @@ export default function App() {
       ...prev,
       transactions: prev.transactions.map((t) =>
         t.id === txId
-          ? { ...t, status: 'paid', paidDate: '2026-11-11' }
+          ? {
+              ...t,
+              status: 'paid',
+              paidDate: t.dueDate || `${prev.selectedMonth}-10`
+            }
           : t
       )
     }));
@@ -215,10 +232,71 @@ export default function App() {
   };
 
   const handleDeleteTransaction = (txId) => {
-    setState((prev) => ({
-      ...prev,
-      transactions: prev.transactions.filter((t) => t.id !== txId)
-    }));
+    setState((prev) => {
+      const targetTx = prev.transactions.find((t) => t.id === txId);
+      const remainingTransactions = prev.transactions.filter((t) => t.id !== txId);
+
+      // If it belonged to a commitment, keep commitment and remaining transactions in sync
+      if (targetTx && targetTx.commitmentId) {
+        const commId = targetTx.commitmentId;
+        const brotherTxs = remainingTransactions
+          .filter((t) => t.commitmentId === commId)
+          .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+        if (brotherTxs.length === 0) {
+          // If all installments were deleted, remove the commitment master record
+          return {
+            ...prev,
+            commitments: prev.commitments.filter((c) => c.id !== commId),
+            transactions: remainingTransactions
+          };
+        }
+
+        // Renumber remaining installments so counting stays consistent (e.g. 1/3, 2/3)
+        const regularTxs = brotherTxs.filter((t) => t.installmentNumber > 0);
+        const newTotalCount = regularTxs.length;
+        const renumberedTxs = brotherTxs.map((t) => {
+          if (t.installmentNumber === 0) return t; // down payment
+          const newIdx = regularTxs.findIndex((rt) => rt.id === t.id) + 1;
+          return {
+            ...t,
+            installmentNumber: newIdx,
+            totalInstallments: newTotalCount
+          };
+        });
+
+        // Update commitments master record
+        const newTotalAmount = renumberedTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const newEndDate = renumberedTxs[renumberedTxs.length - 1].dueDate;
+
+        const updatedCommitments = prev.commitments.map((c) =>
+          c.id === commId
+            ? {
+                ...c,
+                totalAmount: newTotalAmount,
+                installmentsCount: newTotalCount,
+                endDate: newEndDate
+              }
+            : c
+        );
+
+        const updatedTransactions = remainingTransactions.map((t) => {
+          const renumbered = renumberedTxs.find((rt) => rt.id === t.id);
+          return renumbered || t;
+        });
+
+        return {
+          ...prev,
+          commitments: updatedCommitments,
+          transactions: updatedTransactions
+        };
+      }
+
+      return {
+        ...prev,
+        transactions: remainingTransactions
+      };
+    });
     showToast('Lançamento removido.');
   };
 
@@ -283,9 +361,14 @@ export default function App() {
       status: inst.number === 0 ? 'paid' : 'pending',
       owner: commRecord.owner,
       paidBy: commRecord.paidBy,
-      paymentMethod: commRecord.paymentMethod,
+      paymentMethod:
+        inst.number === 0
+          ? (commRecord.downPaymentMethod || 'PIX')
+          : commRecord.paymentMethod,
       cardId:
-        commRecord.paymentMethod === 'Cartão de Crédito'
+        inst.number === 0
+          ? '' // Entrada à vista não infla nem prende limite de fatura de cartão
+          : commRecord.paymentMethod === 'Cartão de Crédito'
           ? commRecord.cardId
           : '',
       installmentNumber: inst.number,
@@ -326,29 +409,95 @@ export default function App() {
 
   const handleUpdateCard = (cardId, updatedCardData) => {
     const newDueDayStr = String(updatedCardData.dueDay || 15).padStart(2, '0');
-    setState((prev) => ({
-      ...prev,
-      cards: prev.cards.map((c) =>
+    setState((prev) => {
+      // 1. Update card
+      const updatedCards = prev.cards.map((c) =>
         c.id === cardId ? { ...c, ...updatedCardData } : c
-      ),
-      // Also update pending transactions linked to this card so their due day matches the new card dueDay!
-      transactions: prev.transactions.map((t) => {
+      );
+
+      // 2. Update pending transactions linked to this card
+      const updatedTransactions = prev.transactions.map((t) => {
         if (t.cardId === cardId && t.status === 'pending' && t.dueDate) {
           const ym = t.dueDate.slice(0, 7);
           return { ...t, dueDate: `${ym}-${newDueDayStr}` };
         }
         return t;
-      })
-    }));
+      });
+
+      // 3. Update commitments linked to this card (recalculate endDate to match new dueDay)
+      const updatedCommitments = prev.commitments.map((comm) => {
+        if (comm.cardId === cardId) {
+          const linked = updatedTransactions
+            .filter((t) => t.commitmentId === comm.id)
+            .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+          const newEndDate =
+            linked.length > 0
+              ? linked[linked.length - 1].dueDate
+              : comm.endDate
+              ? `${comm.endDate.slice(0, 7)}-${newDueDayStr}`
+              : comm.endDate;
+
+          const newStartDate = comm.startDate
+            ? `${comm.startDate.slice(0, 7)}-${newDueDayStr}`
+            : comm.startDate;
+
+          return {
+            ...comm,
+            startDate: newStartDate,
+            endDate: newEndDate
+          };
+        }
+        return comm;
+      });
+
+      return {
+        ...prev,
+        cards: updatedCards,
+        transactions: updatedTransactions,
+        commitments: updatedCommitments
+      };
+    });
     showToast(`Cartão e datas de vencimento da fatura (dia ${updatedCardData.dueDay}) atualizados!`);
   };
 
   const handleDeleteCard = (cardId) => {
-    setState((prev) => ({
-      ...prev,
-      cards: prev.cards.filter((c) => c.id !== cardId)
-    }));
-    showToast('Cartão removido.');
+    setState((prev) => {
+      const cardToDelete = prev.cards.find((c) => c.id === cardId);
+      const remainingCards = prev.cards.filter((c) => c.id !== cardId);
+      const fallbackCard = remainingCards[0] || null;
+
+      // Safely reassign or clean transactions & commitments linked to deleted card
+      const updatedTransactions = prev.transactions.map((t) => {
+        if (t.cardId === cardId) {
+          return {
+            ...t,
+            cardId: fallbackCard ? fallbackCard.id : '',
+            paymentMethod: fallbackCard ? 'Cartão de Crédito' : 'Outros (Cartão Removido)'
+          };
+        }
+        return t;
+      });
+
+      const updatedCommitments = prev.commitments.map((c) => {
+        if (c.cardId === cardId) {
+          return {
+            ...c,
+            cardId: fallbackCard ? fallbackCard.id : '',
+            paymentMethod: fallbackCard ? 'Cartão de Crédito' : 'Outros (Cartão Removido)'
+          };
+        }
+        return c;
+      });
+
+      return {
+        ...prev,
+        cards: remainingCards,
+        transactions: updatedTransactions,
+        commitments: updatedCommitments
+      };
+    });
+    showToast('Cartão removido e lançamentos atualizados.');
   };
 
   const handlePayFullCardInvoice = (cardId, yearMonth) => {
@@ -359,7 +508,11 @@ export default function App() {
         t.dueDate &&
         t.dueDate.startsWith(yearMonth) &&
         t.status === 'pending'
-          ? { ...t, status: 'paid', paidDate: '2026-11-11' }
+          ? {
+              ...t,
+              status: 'paid',
+              paidDate: t.dueDate || `${yearMonth}-15`
+            }
           : t
       )
     }));

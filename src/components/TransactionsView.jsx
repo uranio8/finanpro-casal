@@ -90,7 +90,7 @@ export default function TransactionsView({
   const openConfirmPayModal = (tx) => {
     setPayModalTx(tx);
     setPayForm({
-      paidDate: '2026-11-11',
+      paidDate: tx.dueDate || `${selectedMonth}-10`,
       paidBy: tx.paidBy || 'partner1',
       receiptFileName: ''
     });
@@ -125,9 +125,9 @@ export default function TransactionsView({
             <i className="fa-solid fa-calendar-check"></i> Lançamentos &amp; Calendário de Vencimentos
           </h2>
           <p>
-            Controle todas as compras feitas no <strong>Inter Platinum</strong>,{' '}
-            <strong>Nubank Chroma</strong> e contas de <strong>{getMonthLabel(selectedMonth)}</strong>.
-            Clique em um dia do calendário para filtrar!
+            Controle todas as compras feitas nos cartões{' '}
+            <strong>{cards.map((c) => c.name.split(' ')[0]).join(' e ')}</strong> e contas de{' '}
+            <strong>{getMonthLabel(selectedMonth)}</strong>. Clique em um dia do calendário para filtrar!
           </p>
         </div>
         <div className="header-btns">
@@ -321,7 +321,9 @@ export default function TransactionsView({
                       <div>
                         <strong>{tx.title}</strong>
                         <small>
-                          {tx.totalInstallments
+                          {tx.installmentNumber === 0
+                            ? 'Entrada Inicial'
+                            : tx.totalInstallments
                             ? `Parcela ${tx.installmentNumber}/${tx.totalInstallments}`
                             : tx.type === 'income'
                             ? 'Entrada / Receita'
@@ -380,7 +382,7 @@ export default function TransactionsView({
                       onClick={() =>
                         onToggleTransactionStatus(tx.id, {
                           status: tx.status === 'paid' ? 'pending' : 'paid',
-                          paidDate: tx.status === 'paid' ? '' : '2026-11-11'
+                          paidDate: tx.status === 'paid' ? '' : (tx.dueDate || `${selectedMonth}-10`)
                         })
                       }
                     >

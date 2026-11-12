@@ -23,7 +23,7 @@ export default function CardsView({
     color: '#ea580c'
   });
 
-  const { cards, transactions, selectedMonth, couple } = state;
+  const { cards, transactions, selectedMonth, couple, ownerFilter } = state;
 
   const openNewCardModal = () => {
     setEditingCardId(null);
@@ -53,11 +53,20 @@ export default function CardsView({
     setIsModalOpen(true);
   };
 
+  const filteredCards = useMemo(() => {
+    if (!ownerFilter || ownerFilter === 'all' || ownerFilter === 'joint') return cards;
+    return cards.filter((c) => c.owner === ownerFilter || c.owner === 'joint');
+  }, [cards, ownerFilter]);
+
   const enrichedCards = useMemo(() => {
-    return cards.map((card) => {
-      const allCardTxs = transactions.filter(
-        (t) => t.type === 'expense' && t.cardId === card.id
-      );
+    return filteredCards.map((card) => {
+      const allCardTxs = transactions.filter((t) => {
+        if (t.type !== 'expense' || t.cardId !== card.id) return false;
+        if (ownerFilter === 'joint' && t.owner !== 'joint') return false;
+        if (ownerFilter === 'partner1' && t.owner !== 'partner1' && t.owner !== 'joint') return false;
+        if (ownerFilter === 'partner2' && t.owner !== 'partner2' && t.owner !== 'joint') return false;
+        return true;
+      });
 
       // Current month invoice items
       const monthInvoiceTxs = allCardTxs.filter(
@@ -210,9 +219,16 @@ export default function CardsView({
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   {card.monthInvoicePending > 0 ? (
-                    <span className="status-tag pending">
-                      Aberta ({formatCurrency(card.monthInvoicePending)})
-                    </span>
+                    <div>
+                      <span className="status-tag pending">
+                        Aberta ({formatCurrency(card.monthInvoicePending)})
+                      </span>
+                      {card.monthInvoiceTotal > card.monthInvoicePending && (
+                        <div style={{ fontSize: '10.5px', color: 'var(--primary)', marginTop: '2px', fontWeight: 600 }}>
+                          Pago: {formatCurrency(card.monthInvoiceTotal - card.monthInvoicePending)}
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <span className="status-tag paid">Fatura Quitada</span>
                   )}
@@ -287,7 +303,11 @@ export default function CardsView({
                   <button
                     className="btn-link"
                     style={{ color: '#ef4444', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                    onClick={() => onDeleteCard(card.id)}
+                    onClick={() => {
+                      if (window.confirm(`Tem certeza que deseja remover o cartão "${card.name}"? As despesas vinculadas a ele serão preservadas.`)) {
+                        onDeleteCard(card.id);
+                      }
+                    }}
                   >
                     <i className="fa-solid fa-trash"></i> Remover cartão
                   </button>
