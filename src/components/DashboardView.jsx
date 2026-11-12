@@ -90,7 +90,14 @@ export default function DashboardView({
     return effectiveMonthIncome.partner1Income + effectiveMonthIncome.partner2Income;
   }, [effectiveMonthIncome, ownerFilter]);
 
-  const totalIncome = baseSalaryIncome + totalExtraIncomeMonth;
+  // Receitas Avulsas adicionadas diretamente via "+ Nova Receita" em Lançamentos (excluindo salários)
+  const adhocIncome = useMemo(() => {
+    return monthTransactions
+      .filter((tx) => tx.type === 'income' && tx.category !== 'salario')
+      .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+  }, [monthTransactions]);
+
+  const totalIncome = baseSalaryIncome + totalExtraIncomeMonth + adhocIncome;
 
   // Dízimo (10%) + Oferta (% configurada) Calculation sobre a renda específica do mês
   const titheSummary = useMemo(() => {
@@ -107,7 +114,8 @@ export default function DashboardView({
           i.date &&
           i.date.startsWith(selectedMonth) &&
           i.owner === 'partner1' &&
-          i.applyTitheAndOffering
+          i.applyTitheAndOffering &&
+          i.status === 'received'
       )
       .reduce((acc, i) => acc + Number(i.amount || 0), 0);
 
@@ -117,7 +125,8 @@ export default function DashboardView({
           i.date &&
           i.date.startsWith(selectedMonth) &&
           i.owner === 'partner2' &&
-          i.applyTitheAndOffering
+          i.applyTitheAndOffering &&
+          i.status === 'received'
       )
       .reduce((acc, i) => acc + Number(i.amount || 0), 0);
 
@@ -457,6 +466,7 @@ export default function DashboardView({
             <span className="kpi-sub">
               Salários: {formatCurrency(baseSalaryIncome)} + Extra:{' '}
               {formatCurrency(totalExtraIncomeMonth)}
+              {adhocIncome > 0 && ` + Outras: ${formatCurrency(adhocIncome)}`}
             </span>
           </div>
         </div>

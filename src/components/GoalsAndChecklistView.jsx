@@ -9,7 +9,8 @@ export default function GoalsAndChecklistView({
   onDeleteGoal,
   onToggleChecklist,
   onAddChecklistItem,
-  onDeleteChecklistItem
+  onDeleteChecklistItem,
+  onResetChecklist
 }) {
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState(null);
@@ -30,6 +31,30 @@ export default function GoalsAndChecklistView({
   const [newTaskByGroup, setNewTaskByGroup] = useState({});
 
   const { goals, checklist } = state;
+
+  const handleDeleteGoalClick = (goal) => {
+    if (
+      window.confirm(
+        `Deseja realmente excluir a caixinha "${goal.title}"? O saldo guardado de ${formatCurrency(
+          goal.currentAmount
+        )} será removido.`
+      )
+    ) {
+      onDeleteGoal(goal.id);
+    }
+  };
+
+  const handleResetChecklistClick = () => {
+    if (
+      window.confirm(
+        'Deseja desmarcar todas as tarefas concluídas para iniciar a rotina do novo mês?'
+      )
+    ) {
+      if (onResetChecklist) {
+        onResetChecklist();
+      }
+    }
+  };
 
   const totalTargetAll = goals.reduce((acc, g) => acc + Number(g.targetAmount || 0), 0);
   const totalSavedAll = goals.reduce((acc, g) => acc + Number(g.currentAmount || 0), 0);
@@ -186,7 +211,7 @@ export default function GoalsAndChecklistView({
                   <button
                     className="icon-btn danger"
                     title="Excluir Meta"
-                    onClick={() => onDeleteGoal(goal.id)}
+                    onClick={() => handleDeleteGoalClick(goal)}
                   >
                     <i className="fa-solid fa-trash"></i>
                   </button>
@@ -235,7 +260,7 @@ export default function GoalsAndChecklistView({
 
       {/* CHECKLIST FINANCEIRO DO MÊS */}
       <div className="card">
-        <div className="card-header flex-between">
+        <div className="card-header flex-between wrap" style={{ gap: '12px' }}>
           <div>
             <h3>
               <i className="fa-solid fa-list-check"></i> Checklist de Rotina Financeira do Mês
@@ -244,8 +269,19 @@ export default function GoalsAndChecklistView({
               Passo a passo mensal do casal para manter as contas em dia e sem atritos
             </p>
           </div>
-          <div className="checklist-progress-badge">
-            <strong>{checklistDoneCount}/{checklist.length} concluídos ({checklistPct}%)</strong>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {checklistDoneCount > 0 && onResetChecklist && (
+              <button
+                className="btn btn-sm btn-soft"
+                title="Desmarcar todas as tarefas para o novo mês"
+                onClick={handleResetChecklistClick}
+              >
+                <i className="fa-solid fa-rotate-left"></i> Reiniciar Checklist
+              </button>
+            )}
+            <div className="checklist-progress-badge">
+              <strong>{checklistDoneCount}/{checklist.length} concluídos ({checklistPct}%)</strong>
+            </div>
           </div>
         </div>
 

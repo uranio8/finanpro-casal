@@ -810,6 +810,14 @@ export default function App() {
     }));
   };
 
+  const handleResetChecklist = () => {
+    setState((prev) => ({
+      ...prev,
+      checklist: (prev.checklist || []).map((c) => ({ ...c, done: false }))
+    }));
+    showToast('Checklist reiniciado para a nova rotina mensal! ✨');
+  };
+
   const handleUpdateCoupleSettings = (updates) => {
     setState((prev) => ({
       ...prev,
@@ -841,13 +849,59 @@ export default function App() {
   };
 
   const handleImportBackup = (parsedState) => {
-    setState({ ...INITIAL_STATE, ...parsedState });
-    showToast('Backup JSON restaurado com sucesso!');
+    try {
+      if (!parsedState || typeof parsedState !== 'object') {
+        alert('Arquivo de backup inválido.');
+        return;
+      }
+
+      const mapCardId = (cid) => {
+        if (!cid) return '';
+        if (cid === 'card-2') return 'card-inter';
+        if (cid === 'card-1' || cid === 'card-3') return 'card-nubank';
+        return cid;
+      };
+
+      const sanitizedCards = Array.isArray(parsedState.cards) && parsedState.cards.length > 0
+        ? parsedState.cards
+        : INITIAL_STATE.cards;
+
+      const sanitizedTransactions = Array.isArray(parsedState.transactions)
+        ? parsedState.transactions.map((t) => ({ ...t, cardId: mapCardId(t.cardId) }))
+        : INITIAL_STATE.transactions;
+
+      const sanitizedCommitments = Array.isArray(parsedState.commitments)
+        ? parsedState.commitments.map((c) => ({ ...c, cardId: mapCardId(c.cardId) }))
+        : INITIAL_STATE.commitments;
+
+      setState({
+        ...INITIAL_STATE,
+        ...parsedState,
+        version: '1.4.0',
+        cards: sanitizedCards,
+        transactions: sanitizedTransactions,
+        commitments: sanitizedCommitments,
+        couple: {
+          ...INITIAL_STATE.couple,
+          ...(parsedState.couple || {})
+        }
+      });
+      showToast('Backup JSON restaurado com sucesso! ✨');
+    } catch (err) {
+      console.error('Erro na importação de backup:', err);
+      alert('Falha ao processar arquivo de backup.');
+    }
   };
 
   const handleResetToDemo = () => {
-    setState(INITIAL_STATE);
-    showToast('Dados de demonstração restaurados!');
+    if (
+      window.confirm(
+        'Tem certeza de que deseja restaurar os dados de demonstração? Todas as suas alterações, contas, metas e rendas cadastradas serão substituídas pelo modelo inicial.'
+      )
+    ) {
+      setState(INITIAL_STATE);
+      showToast('Dados de demonstração restaurados!');
+    }
   };
 
   const navItems = [
@@ -1056,6 +1110,7 @@ export default function App() {
             onToggleChecklist={handleToggleChecklist}
             onAddChecklistItem={handleAddChecklistItem}
             onDeleteChecklistItem={handleDeleteChecklistItem}
+            onResetChecklist={handleResetChecklist}
           />
         )}
 
