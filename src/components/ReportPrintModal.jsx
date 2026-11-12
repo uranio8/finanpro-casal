@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
@@ -20,6 +20,17 @@ export default function ReportPrintModal({ state, onClose }) {
     categoryBudgets = {},
     monthlySettlements = {}
   } = state;
+
+  // Fechar modal ao pressionar tecla Escape (WCAG)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const [reportMode, setReportMode] = useState('monthly'); // 'monthly' | 'annual'
   const [selectedYear, setSelectedYear] = useState(
@@ -195,18 +206,26 @@ export default function ReportPrintModal({ state, onClose }) {
 
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {reportMode === 'annual' && (
-                <select
-                  id="report-year-select"
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  style={{ padding: '6px 12px', borderRadius: '8px' }}
-                >
-                  {availableYears.map((yr) => (
-                    <option key={yr} value={yr}>
-                      Ano {yr}
-                    </option>
-                  ))}
-                </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <label
+                    htmlFor="report-year-select"
+                    style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}
+                  >
+                    Ano:
+                  </label>
+                  <select
+                    id="report-year-select"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    style={{ padding: '6px 12px', borderRadius: '8px' }}
+                  >
+                    {availableYears.map((yr) => (
+                      <option key={yr} value={yr}>
+                        Ano {yr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
               <button
                 type="button"
@@ -308,97 +327,103 @@ export default function ReportPrintModal({ state, onClose }) {
                   <h4 style={{ marginBottom: '10px' }}>
                     <i className="fa-solid fa-layer-group"></i> Despesas por Categoria vs. Meta
                   </h4>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Categoria</th>
-                        <th className="text-center">Gasto no Mês</th>
-                        <th className="text-center">Teto Mensal</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {CATEGORIES.map((cat) => {
-                        const spent =
-                          cat.id === 'dizimo'
-                            ? currentMonthData.totalPrimicias
-                            : currentMonthData.nonTitheExpenses
-                                .filter((t) => t.category === cat.id)
-                                .reduce((a, t) => a + Number(t.amount || 0), 0);
-                        const budget = Number(categoryBudgets[cat.id] || 0);
-                        if (spent === 0 && budget === 0) return null;
-                        return (
-                          <tr key={cat.id}>
-                            <td>{cat.name}</td>
-                            <td className="text-center font-mono-val">
-                              <strong>{formatCurrency(spent)}</strong>
-                            </td>
-                            <td className="text-center font-mono-val">
-                              {budget > 0 ? formatCurrency(budget) : '-'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="table-responsive">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Categoria</th>
+                          <th className="text-center">Gasto no Mês</th>
+                          <th className="text-center">Teto Mensal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {CATEGORIES.map((cat) => {
+                          const spent =
+                            cat.id === 'dizimo'
+                              ? currentMonthData.totalPrimicias
+                              : currentMonthData.nonTitheExpenses
+                                  .filter((t) => t.category === cat.id)
+                                  .reduce((a, t) => a + Number(t.amount || 0), 0);
+                          const budget = Number(categoryBudgets[cat.id] || 0);
+                          if (spent === 0 && budget === 0) return null;
+                          return (
+                            <tr key={cat.id}>
+                              <td>{cat.name}</td>
+                              <td className="text-center font-mono-val">
+                                <strong>{formatCurrency(spent)}</strong>
+                              </td>
+                              <td className="text-center font-mono-val">
+                                {budget > 0 ? formatCurrency(budget) : '-'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 <div className="card" style={{ padding: '14px' }}>
                   <h4 style={{ marginBottom: '10px' }}>
                     <i className="fa-solid fa-credit-card"></i> Faturas dos Cartões &amp; Caixinhas
                   </h4>
-                  <table className="data-table" style={{ marginBottom: '14px' }}>
-                    <thead>
-                      <tr>
-                        <th>Cartão</th>
-                        <th className="text-center">Vencimento</th>
-                        <th className="text-center">Fatura do Mês</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cards.map((c) => {
-                        const invTotal = currentMonthData.monthExpenses
-                          .filter((t) => t.cardId === c.id)
-                          .reduce((a, t) => a + Number(t.amount || 0), 0);
-                        return (
-                          <tr key={c.id}>
-                            <td>
-                              <strong>{c.name}</strong>
-                            </td>
-                            <td className="text-center">Dia {c.dueDay}</td>
-                            <td className="text-center font-mono-val">
-                              <strong>{formatCurrency(invTotal)}</strong>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="table-responsive">
+                    <table className="data-table" style={{ marginBottom: '14px' }}>
+                      <thead>
+                        <tr>
+                          <th>Cartão</th>
+                          <th className="text-center">Vencimento</th>
+                          <th className="text-center">Fatura do Mês</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cards.map((c) => {
+                          const invTotal = currentMonthData.monthExpenses
+                            .filter((t) => t.cardId === c.id)
+                            .reduce((a, t) => a + Number(t.amount || 0), 0);
+                          return (
+                            <tr key={c.id}>
+                              <td>
+                                <strong>{c.name}</strong>
+                              </td>
+                              <td className="text-center">Dia {c.dueDay}</td>
+                              <td className="text-center font-mono-val">
+                                <strong>{formatCurrency(invTotal)}</strong>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
 
                   <h4 style={{ marginBottom: '8px', marginTop: '12px' }}>
                     <i className="fa-solid fa-piggy-bank"></i> Progresso das Caixinhas (Metas)
                   </h4>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Meta / Caixinha</th>
-                        <th className="text-center">Guardado</th>
-                        <th className="text-center">Alvo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {goals.map((g) => (
-                        <tr key={g.id}>
-                          <td>{g.title}</td>
-                          <td className="text-center font-mono-val text-emerald">
-                            <strong>{formatCurrency(g.currentAmount)}</strong>
-                          </td>
-                          <td className="text-center font-mono-val">
-                            {formatCurrency(g.targetAmount)}
-                          </td>
+                  <div className="table-responsive">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Meta / Caixinha</th>
+                          <th className="text-center">Guardado</th>
+                          <th className="text-center">Alvo</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {goals.map((g) => (
+                          <tr key={g.id}>
+                            <td>{g.title}</td>
+                            <td className="text-center font-mono-val text-emerald">
+                              <strong>{formatCurrency(g.currentAmount)}</strong>
+                            </td>
+                            <td className="text-center font-mono-val">
+                              {formatCurrency(g.targetAmount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>
@@ -435,66 +460,68 @@ export default function ReportPrintModal({ state, onClose }) {
               </div>
 
               <div className="card" style={{ padding: '14px' }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Mês ({selectedYear})</th>
-                      <th className="text-center">Receitas</th>
-                      <th className="text-center">Primícias (Dízimo/Oferta)</th>
-                      <th className="text-center">Despesas &amp; Parcelas</th>
-                      <th className="text-center">Saldo Livre do Mês</th>
-                      <th className="text-center">Acumulado no Ano</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {annualMonthsData.map((m) => (
-                      <tr key={m.ym}>
-                        <td>
-                          <strong>{m.label}</strong>
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Mês ({selectedYear})</th>
+                        <th className="text-center">Receitas</th>
+                        <th className="text-center">Primícias (Dízimo/Oferta)</th>
+                        <th className="text-center">Despesas &amp; Parcelas</th>
+                        <th className="text-center">Saldo Livre do Mês</th>
+                        <th className="text-center">Acumulado no Ano</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {annualMonthsData.map((m) => (
+                        <tr key={m.ym}>
+                          <td>
+                            <strong>{m.label}</strong>
+                          </td>
+                          <td className="text-center font-mono-val">
+                            {formatCurrency(m.totalIncome)}
+                          </td>
+                          <td className="text-center font-mono-val" style={{ color: 'var(--primary)' }}>
+                            {formatCurrency(m.totalPrimicias)}
+                          </td>
+                          <td className="text-center font-mono-val">
+                            {formatCurrency(m.regularExpensesTotal)}
+                          </td>
+                          <td
+                            className={`text-center font-mono-val ${
+                              m.freeBalance >= 0 ? 'text-emerald' : 'text-danger'
+                            }`}
+                          >
+                            <strong>{formatCurrency(m.freeBalance)}</strong>
+                          </td>
+                          <td className="text-center font-mono-val">
+                            <strong>{formatCurrency(m.cumulativeBalance)}</strong>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ fontWeight: 800, background: 'var(--bg-main)' }}>
+                        <td>TOTAL ANUAL ({selectedYear})</td>
+                        <td className="text-center font-mono-val">
+                          {formatCurrency(annualTotals.income)}
                         </td>
                         <td className="text-center font-mono-val">
-                          {formatCurrency(m.totalIncome)}
-                        </td>
-                        <td className="text-center font-mono-val" style={{ color: 'var(--primary)' }}>
-                          {formatCurrency(m.totalPrimicias)}
+                          {formatCurrency(annualTotals.primicias)}
                         </td>
                         <td className="text-center font-mono-val">
-                          {formatCurrency(m.regularExpensesTotal)}
+                          {formatCurrency(annualTotals.expenses)}
                         </td>
-                        <td
-                          className={`text-center font-mono-val ${
-                            m.freeBalance >= 0 ? 'text-emerald' : 'text-danger'
-                          }`}
-                        >
-                          <strong>{formatCurrency(m.freeBalance)}</strong>
+                        <td className="text-center font-mono-val text-emerald">
+                          {formatCurrency(annualTotals.freeBalance)}
                         </td>
-                        <td className="text-center font-mono-val">
-                          <strong>{formatCurrency(m.cumulativeBalance)}</strong>
+                        <td className="text-center font-mono-val text-emerald">
+                          {formatCurrency(annualTotals.freeBalance)}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ fontWeight: 800, background: 'var(--bg-main)' }}>
-                      <td>TOTAL ANUAL ({selectedYear})</td>
-                      <td className="text-center font-mono-val">
-                        {formatCurrency(annualTotals.income)}
-                      </td>
-                      <td className="text-center font-mono-val">
-                        {formatCurrency(annualTotals.primicias)}
-                      </td>
-                      <td className="text-center font-mono-val">
-                        {formatCurrency(annualTotals.expenses)}
-                      </td>
-                      <td className="text-center font-mono-val text-emerald">
-                        {formatCurrency(annualTotals.freeBalance)}
-                      </td>
-                      <td className="text-center font-mono-val text-emerald">
-                        {formatCurrency(annualTotals.freeBalance)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
             </div>
           )}

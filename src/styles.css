@@ -1915,6 +1915,15 @@ td.text-center .row-actions {
   .form-grid-3 {
     grid-template-columns: 1fr;
   }
+  .backup-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .backup-item .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .form-error-banner {
@@ -2329,6 +2338,9 @@ td.text-center .row-actions {
     overflow: visible !important;
     box-shadow: none !important;
     border: none !important;
+  }
+  .table-responsive {
+    overflow: visible !important;
   }
 }
 

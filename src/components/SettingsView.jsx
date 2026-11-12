@@ -26,6 +26,7 @@ export default function SettingsView({
     autoSync: supabaseConfig?.autoSync !== false
   });
   const [showSqlGuide, setShowSqlGuide] = useState(false);
+  const [importError, setImportError] = useState(null);
 
   const [coupleForm, setCoupleForm] = useState({
     partner1Name: couple.partner1Name || 'Wesley',
@@ -92,16 +93,22 @@ export default function SettingsView({
   const handleFileImport = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setImportError(null);
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const parsed = JSON.parse(ev.target.result);
+        if (!parsed || typeof parsed !== 'object') {
+          setImportError('Arquivo JSON inválido. O conteúdo não possui formato de backup válido.');
+          return;
+        }
         onImportBackup(parsed);
       } catch (err) {
-        alert('Arquivo JSON inválido.');
+        setImportError('Erro ao ler o arquivo JSON. Certifique-se de selecionar um backup exportado pelo FinanPro.');
       }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   return (
@@ -381,6 +388,12 @@ export default function SettingsView({
               Exporte ou restaure todos os dados financeiros com 1 clique
             </p>
           </div>
+          {importError && (
+            <div className="form-error-banner" style={{ margin: '0 0 14px 0' }}>
+              <i className="fa-solid fa-triangle-exclamation"></i>
+              <span>{importError}</span>
+            </div>
+          )}
           <div className="backup-actions-box">
             <div className="backup-item">
               <div>
