@@ -783,60 +783,7 @@ export default function App() {
                 />
               </div>
 
-              {txForm.type === 'expense' && (
-                <div className="installment-plan-box">
-                  <div className="form-grid-2">
-                    <div className="form-group">
-                      <label htmlFor="tx-method">Onde foi feito o gasto? *</label>
-                      <select
-                        id="tx-method"
-                        value={txForm.paymentMethod}
-                        onChange={(e) => {
-                          const method = e.target.value;
-                          if (method === 'Cartão de Crédito' && state.cards[0]) {
-                            handleSelectCardInTxModal(txForm.cardId || state.cards[0].id);
-                          }
-                          setTxForm((prev) => ({
-                            ...prev,
-                            paymentMethod: method
-                          }));
-                        }}
-                      >
-                        <option value="Cartão de Crédito">💳 Cartão de Crédito (Inter / Nubank)</option>
-                        <option value="PIX">💠 PIX / Conta Corrente</option>
-                        <option value="Cartão de Débito">💳 Cartão de Débito</option>
-                        <option value="Boleto">📄 Boleto Bancário</option>
-                      </select>
-                    </div>
-
-                    {txForm.paymentMethod === 'Cartão de Crédito' && (
-                      <div className="form-group">
-                        <label htmlFor="tx-card">Em qual Cartão? *</label>
-                        <select
-                          id="tx-card"
-                          value={txForm.cardId}
-                          onChange={(e) => handleSelectCardInTxModal(e.target.value)}
-                        >
-                          {state.cards.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {txForm.paymentMethod === 'Cartão de Crédito' && selectedCardInModal && (
-                    <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--primary)', fontWeight: 600 }}>
-                      <i className="fa-solid fa-circle-info"></i> Este gasto será somado na fatura do{' '}
-                      <strong>{selectedCardInModal.name}</strong> (Fechamento dia{' '}
-                      {selectedCardInModal.closingDay} · Vencimento dia {selectedCardInModal.dueDay}).
-                    </div>
-                  )}
-                </div>
-              )}
-
+              {/* VALOR E VENCIMENTO */}
               <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="tx-amount">Valor (R$) *</label>
@@ -854,8 +801,8 @@ export default function App() {
                 <div className="form-group">
                   <label htmlFor="tx-date">
                     {txForm.paymentMethod === 'Cartão de Crédito'
-                      ? 'Vencimento da Fatura (Automático) *'
-                      : 'Data de Vencimento / Pagamento *'}
+                      ? 'Vencimento da Fatura *'
+                      : 'Data de Vencimento *'}
                   </label>
                   <input
                     id="tx-date"
@@ -867,6 +814,84 @@ export default function App() {
                 </div>
               </div>
 
+              {/* FORMA DE PAGAMENTO E CARTÃO (SEM BOXES APERTADAS) */}
+              {txForm.type === 'expense' && (
+                <>
+                  <div className="form-grid-2">
+                    <div className="form-group">
+                      <label htmlFor="tx-method">Forma de Pagamento *</label>
+                      <select
+                        id="tx-method"
+                        value={txForm.paymentMethod}
+                        onChange={(e) => {
+                          const method = e.target.value;
+                          if (method === 'Cartão de Crédito' && state.cards[0]) {
+                            handleSelectCardInTxModal(txForm.cardId || state.cards[0].id);
+                          }
+                          setTxForm((prev) => ({
+                            ...prev,
+                            paymentMethod: method
+                          }));
+                        }}
+                      >
+                        <option value="Cartão de Crédito">💳 Cartão de Crédito</option>
+                        <option value="PIX">💠 PIX / Transferência</option>
+                        <option value="Cartão de Débito">💳 Cartão de Débito</option>
+                        <option value="Boleto">📄 Boleto Bancário</option>
+                      </select>
+                    </div>
+
+                    {txForm.paymentMethod === 'Cartão de Crédito' ? (
+                      <div className="form-group">
+                        <label htmlFor="tx-card">Qual Cartão? *</label>
+                        <select
+                          id="tx-card"
+                          value={txForm.cardId}
+                          onChange={(e) => handleSelectCardInTxModal(e.target.value)}
+                        >
+                          {state.cards.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="form-group">
+                        <label htmlFor="tx-paidby-direct">Quem Pagou? *</label>
+                        <select
+                          id="tx-paidby-direct"
+                          value={txForm.paidBy}
+                          onChange={(e) => setTxForm({ ...txForm, paidBy: e.target.value })}
+                        >
+                          <option value="partner1">{state.couple.partner1Name}</option>
+                          <option value="partner2">{state.couple.partner2Name}</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {txForm.paymentMethod === 'Cartão de Crédito' && selectedCardInModal && (
+                    <div className="modal-card-info-badge">
+                      <i
+                        className="fa-solid fa-credit-card"
+                        style={{ color: selectedCardInModal.color, fontSize: '15px' }}
+                      ></i>
+                      <span>
+                        Fatura <strong>{selectedCardInModal.name}</strong> · Fecha dia{' '}
+                        <strong>{selectedCardInModal.closingDay}</strong> · Vence dia{' '}
+                        <strong>{selectedCardInModal.dueDay}</strong> (Titular:{' '}
+                        {selectedCardInModal.owner === 'partner1'
+                          ? state.couple.partner1Name
+                          : state.couple.partner2Name}
+                        )
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* CATEGORIA E STATUS */}
               <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="tx-cat">Categoria</label>
@@ -886,7 +911,7 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="tx-status">Situação</label>
+                  <label htmlFor="tx-status">Situação do Pagamento</label>
                   <select
                     id="tx-status"
                     value={txForm.status}
@@ -894,43 +919,46 @@ export default function App() {
                   >
                     <option value="pending">
                       {txForm.type === 'income'
-                        ? 'A Receber'
+                        ? '⏳ A Receber'
                         : txForm.paymentMethod === 'Cartão de Crédito'
-                        ? 'Na Fatura do Mês (A Pagar)'
-                        : 'A Pagar (Pendente)'}
+                        ? '💳 Na Fatura do Mês (A Pagar)'
+                        : '⏳ Pendente (A Pagar)'}
                     </option>
                     <option value="paid">
-                      {txForm.type === 'income' ? 'Já Recebido' : 'Já Pago / Fatura Quitada'}
+                      {txForm.type === 'income' ? '✅ Já Recebido' : '✅ Já Pago / Fatura Quitada'}
                     </option>
                   </select>
                 </div>
               </div>
 
+              {/* DIVISÃO DO GASTO */}
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label htmlFor="tx-owner">De quem é a despesa (Divisão)?</label>
+                  <label htmlFor="tx-owner">Divisão da Despesa</label>
                   <select
                     id="tx-owner"
                     value={txForm.owner}
                     onChange={(e) => setTxForm({ ...txForm, owner: e.target.value })}
                   >
-                    <option value="joint">Conjunto da Casa (Dividido pelo Casal)</option>
-                    <option value="partner1">Individual — {state.couple.partner1Name}</option>
-                    <option value="partner2">Individual — {state.couple.partner2Name}</option>
+                    <option value="joint">🏠 Conjunto da Casa (Casal)</option>
+                    <option value="partner1">👤 Individual — {state.couple.partner1Name}</option>
+                    <option value="partner2">👤 Individual — {state.couple.partner2Name}</option>
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label htmlFor="tx-paidby">Titular que paga a fatura / conta</label>
-                  <select
-                    id="tx-paidby"
-                    value={txForm.paidBy}
-                    onChange={(e) => setTxForm({ ...txForm, paidBy: e.target.value })}
-                  >
-                    <option value="partner1">{state.couple.partner1Name}</option>
-                    <option value="partner2">{state.couple.partner2Name}</option>
-                  </select>
-                </div>
+                {txForm.paymentMethod === 'Cartão de Crédito' && (
+                  <div className="form-group">
+                    <label htmlFor="tx-paidby">Titular que Paga a Fatura</label>
+                    <select
+                      id="tx-paidby"
+                      value={txForm.paidBy}
+                      onChange={(e) => setTxForm({ ...txForm, paidBy: e.target.value })}
+                    >
+                      <option value="partner1">{state.couple.partner1Name}</option>
+                      <option value="partner2">{state.couple.partner2Name}</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="modal-footer">
