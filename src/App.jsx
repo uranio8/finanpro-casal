@@ -1189,7 +1189,7 @@ export default function App() {
         let txCategory = 'outros';
         if (gCat.includes('viag') || gCat.includes('sonho') || gCat.includes('férias') || gCat.includes('praia')) {
           txCategory = 'viagens';
-        } else if (gCat.includes('casa') || gCat.includes('reforma') || gCat.includes('móv') || gCat.includes('eletro') || gCat.includes('sofá')) {
+        } else if (/\bcasa\b/i.test(gCat) || gCat.includes('reforma') || gCat.includes('móv') || gCat.includes('eletro') || gCat.includes('sofá')) {
           txCategory = 'eletro';
         } else if (gCat.includes('veículo') || gCat.includes('carro') || gCat.includes('moto') || gCat.includes('ipva') || gCat.includes('manuten')) {
           txCategory = 'transporte';
@@ -1479,7 +1479,7 @@ export default function App() {
       const importedBase = {
         ...INITIAL_STATE,
         ...parsedState,
-        version: '1.5.0',
+        version: parsedState.version || '2.0.0',
         cards: sanitizedCards,
         transactions: sanitizedTransactions,
         commitments: sanitizedCommitments,
