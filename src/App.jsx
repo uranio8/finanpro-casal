@@ -1184,11 +1184,22 @@ export default function App() {
 
       let updatedTransactions = prev.transactions;
       if (recordAsTransaction && targetGoal) {
+        // Mapeamento inteligente de categoria da Caixinha para o plano de contas
+        const gCat = `${targetGoal.category || ''} ${targetGoal.title || ''}`.toLowerCase();
+        let txCategory = 'outros';
+        if (gCat.includes('viag') || gCat.includes('sonho') || gCat.includes('férias') || gCat.includes('praia')) {
+          txCategory = 'viagens';
+        } else if (gCat.includes('casa') || gCat.includes('reforma') || gCat.includes('móv') || gCat.includes('eletro') || gCat.includes('sofá')) {
+          txCategory = 'eletro';
+        } else if (gCat.includes('veículo') || gCat.includes('carro') || gCat.includes('moto') || gCat.includes('ipva') || gCat.includes('manuten')) {
+          txCategory = 'transporte';
+        }
+
         const depositTx = {
           id: `tx-goal-${Date.now()}`,
           title: `Aporte na Caixinha: ${targetGoal.title}`,
           type: 'expense',
-          category: 'viagens',
+          category: txCategory,
           amount: depositVal,
           dueDate: `${prev.selectedMonth}-10`,
           paidDate: `${prev.selectedMonth}-10`,
@@ -1337,7 +1348,7 @@ export default function App() {
       // Marca automaticamente a tarefa de fechamento/acerto no Checklist do Mês
       const updatedChecklist = (prev.checklist || []).map((item) => {
         const lower = (item.title || '').toLowerCase();
-        if (lower.includes('acerto') || lower.includes('fechamento') || item.id === 'chk-8') {
+        if (lower.includes('acerto') || lower.includes('fechamento') || item.id === 'chk-6' || item.id === 'chk-8') {
           return { ...item, done: true };
         }
         return item;
@@ -1358,9 +1369,20 @@ export default function App() {
     setState((prev) => {
       const nextSettlements = { ...(prev.monthlySettlements || {}) };
       delete nextSettlements[ym];
+
+      // Desmarca automaticamente a tarefa de fechamento/acerto no Checklist do Mês para refletir a reabertura
+      const updatedChecklist = (prev.checklist || []).map((item) => {
+        const lower = (item.title || '').toLowerCase();
+        if (lower.includes('acerto') || lower.includes('fechamento') || item.id === 'chk-6' || item.id === 'chk-8') {
+          return { ...item, done: false };
+        }
+        return item;
+      });
+
       return {
         ...prev,
-        monthlySettlements: nextSettlements
+        monthlySettlements: nextSettlements,
+        checklist: updatedChecklist
       };
     });
     showToast(`Acerto de ${getMonthLabel(ym)} reaberto para ajustes.`);

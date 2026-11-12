@@ -329,7 +329,9 @@ export default function GoalsAndChecklistView({
                         <i className="fa-solid fa-rocket" style={{ color: 'var(--primary)' }}></i> Previsão no ritmo atual:
                       </span>
                       <strong>
-                        {getMonthLabel(estimatedCompletionYm)} (~{monthsAtCouplePace}m)
+                        {pacePerGoal > 0 && monthsAtCouplePace > 0
+                          ? `${getMonthLabel(estimatedCompletionYm)} (~${monthsAtCouplePace}m)`
+                          : 'A definir (configure a meta mensal)'}
                       </strong>
                     </div>
                     {cashReliefInfo.monthlyRelief > 0 && (

@@ -154,3 +154,4 @@ export async function pullStateFromSupabase(customCfg) {
     return { ok: false, error: err?.message || 'Erro de rede ao consultar Supabase' };
   }
 }
+
