@@ -147,6 +147,7 @@ export default function App() {
   const [fabOpen, setFabOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isMonthIncomeModalOpen, setIsMonthIncomeModalOpen] = useState(false);
 
   // Supabase Cloud Sync & PWA State
   const [supabaseConfig, setSupabaseConfig] = useState(() => getSupabaseConfig());
@@ -1264,7 +1265,6 @@ export default function App() {
     showToast(`Meta "${updatedGoalData.title || 'Caixinha'}" atualizada com sucesso! ✨`);
   };
 
-  const [isMonthIncomeModalOpen, setIsMonthIncomeModalOpen] = useState(false);
   const effectiveIncome = getEffectiveMonthIncome(state, state.selectedMonth);
 
   const [monthIncomeForm, setMonthIncomeForm] = useState({
