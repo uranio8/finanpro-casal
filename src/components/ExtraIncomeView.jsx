@@ -89,7 +89,7 @@ export default function ExtraIncomeView({
 
   // Calculate Tithe (10%) + Offering (%) for an item
   const computeItemTitheAndOffering = (item) => {
-    if (!couple.titheEnabled || !item.applyTitheAndOffering) {
+    if (!couple.titheEnabled || !couple.includeExtraInTithe || item.applyTitheAndOffering === false) {
       return { tithe: 0, offering: 0, totalConsecrated: 0, netAmount: Number(item.amount || 0) };
     }
     const gross = Number(item.amount || 0);
@@ -124,14 +124,19 @@ export default function ExtraIncomeView({
 
     let totalTithe = 0;
     let totalOffering = 0;
+    let pendingConsecrated = 0;
     monthItems.forEach((item) => {
       const calc = computeItemTitheAndOffering(item);
-      totalTithe += calc.tithe;
-      totalOffering += calc.offering;
+      if (item.status === 'received') {
+        totalTithe += calc.tithe;
+        totalOffering += calc.offering;
+      } else {
+        pendingConsecrated += calc.totalConsecrated;
+      }
     });
 
-    const totalConsecrated = totalTithe + totalOffering;
-    const totalNet = Math.max(0, totalGross - totalConsecrated);
+    const totalConsecrated = Number((totalTithe + totalOffering).toFixed(2));
+    const totalNet = Math.max(0, totalGross - totalConsecrated - pendingConsecrated);
 
     return {
       totalGross,
@@ -144,6 +149,7 @@ export default function ExtraIncomeView({
       totalTithe,
       totalOffering,
       totalConsecrated,
+      pendingConsecrated: Number(pendingConsecrated.toFixed(2)),
       totalNet
     };
   }, [monthItems, couple]);

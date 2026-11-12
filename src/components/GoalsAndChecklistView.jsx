@@ -16,6 +16,8 @@ export default function GoalsAndChecklistView({
   const [editingGoalId, setEditingGoalId] = useState(null);
   const [depositModalGoal, setDepositModalGoal] = useState(null);
   const [depositAmount, setDepositAmount] = useState('');
+  const [recordDepositAsTx, setRecordDepositAsTx] = useState(true);
+  const [depositPaidBy, setDepositPaidBy] = useState('partner1');
 
   const [goalForm, setGoalForm] = useState({
     title: '',
@@ -30,7 +32,7 @@ export default function GoalsAndChecklistView({
 
   const [newTaskByGroup, setNewTaskByGroup] = useState({});
 
-  const { goals, checklist } = state;
+  const { goals, checklist, couple } = state;
 
   const handleDeleteGoalClick = (goal) => {
     if (
@@ -127,7 +129,7 @@ export default function GoalsAndChecklistView({
     e.preventDefault();
     const val = Number(depositAmount);
     if (!depositModalGoal || val <= 0) return;
-    onDepositGoal(depositModalGoal.id, val);
+    onDepositGoal(depositModalGoal.id, val, recordDepositAsTx, depositPaidBy);
     setDepositAmount('');
     setDepositModalGoal(null);
   };
@@ -399,6 +401,30 @@ export default function GoalsAndChecklistView({
                   </small>
                 )}
               </div>
+              <div className="form-group" style={{ marginTop: '12px' }}>
+                <label className="checkbox-label" htmlFor="dep-record-tx">
+                  <input
+                    id="dep-record-tx"
+                    type="checkbox"
+                    checked={recordDepositAsTx}
+                    onChange={(e) => setRecordDepositAsTx(e.target.checked)}
+                  />
+                  <span>Registrar este aporte como saída nos Lançamentos do mês ativo ({state.selectedMonth})</span>
+                </label>
+              </div>
+              {recordDepositAsTx && (
+                <div className="form-group" style={{ marginTop: '8px' }}>
+                  <label htmlFor="dep-paidby">Quem realizou o aporte? *</label>
+                  <select
+                    id="dep-paidby"
+                    value={depositPaidBy}
+                    onChange={(e) => setDepositPaidBy(e.target.value)}
+                  >
+                    <option value="partner1">{couple?.partner1Name || 'Wesley'}</option>
+                    <option value="partner2">{couple?.partner2Name || 'Beatriz'}</option>
+                  </select>
+                </div>
+              )}
               <div className="modal-footer">
                 <button
                   type="button"

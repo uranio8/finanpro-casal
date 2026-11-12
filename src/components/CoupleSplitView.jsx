@@ -1,5 +1,10 @@
 import React, { useMemo } from 'react';
-import { formatCurrency, getMonthLabel, getEffectiveMonthIncome } from '../utils/formatters';
+import {
+  formatCurrency,
+  getMonthLabel,
+  getEffectiveMonthIncome,
+  isAutoSalaryTransaction
+} from '../utils/formatters';
 
 export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenMonthIncomeModal }) {
   const { couple, transactions, extraIncomes = [], selectedMonth } = state;
@@ -23,6 +28,9 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
   const p1ExtraReceived = monthExtras
     .filter((i) => i.owner === 'partner1' && i.status === 'received')
     .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+  const p1ExtraTitheable = monthExtras
+    .filter((i) => i.owner === 'partner1' && i.status === 'received' && i.applyTitheAndOffering !== false)
+    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
   const p1ExtraPending = monthExtras
     .filter((i) => i.owner === 'partner1' && i.status === 'pending')
     .reduce((acc, i) => acc + Number(i.amount || 0), 0);
@@ -31,19 +39,29 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
   const p2ExtraReceived = monthExtras
     .filter((i) => i.owner === 'partner2' && i.status === 'received')
     .reduce((acc, i) => acc + Number(i.amount || 0), 0);
+  const p2ExtraTitheable = monthExtras
+    .filter((i) => i.owner === 'partner2' && i.status === 'received' && i.applyTitheAndOffering !== false)
+    .reduce((acc, i) => acc + Number(i.amount || 0), 0);
   const p2ExtraPending = monthExtras
     .filter((i) => i.owner === 'partner2' && i.status === 'pending')
     .reduce((acc, i) => acc + Number(i.amount || 0), 0);
   const p2ExtraTotal = p2ExtraReceived + p2ExtraPending;
 
-  // Receitas Avulsas adicionadas diretamente via "+ Nova Receita" em Lançamentos (excluindo salários)
-  const p1AdhocIncomes = monthTxs
-    .filter((t) => t.type === 'income' && t.category !== 'salario' && t.owner === 'partner1')
+  // Receitas Avulsas adicionadas diretamente via "+ Nova Receita" em Lançamentos (excluindo salários automáticos)
+  const p1DirectAdhoc = monthTxs
+    .filter((t) => t.type === 'income' && !isAutoSalaryTransaction(t) && t.owner === 'partner1')
     .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-  const p2AdhocIncomes = monthTxs
-    .filter((t) => t.type === 'income' && t.category !== 'salario' && t.owner === 'partner2')
+  const p2DirectAdhoc = monthTxs
+    .filter((t) => t.type === 'income' && !isAutoSalaryTransaction(t) && t.owner === 'partner2')
     .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+  const jointAdhoc = monthTxs
+    .filter((t) => t.type === 'income' && !isAutoSalaryTransaction(t) && t.owner === 'joint')
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+  const p1AdhocIncomes = p1DirectAdhoc + jointAdhoc / 2;
+  const p2AdhocIncomes = p2DirectAdhoc + jointAdhoc / 2;
 
   const p1Salary = effectiveMonthIncome.partner1Income;
   const p2Salary = effectiveMonthIncome.partner2Income;
@@ -59,9 +77,9 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
   const p1OffPct = couple.titheEnabled ? Number(couple.partner1OfferingPercent ?? 5) : 0;
   const p2OffPct = couple.titheEnabled ? Number(couple.partner2OfferingPercent ?? 5) : 0;
 
-  // Dízimo sobre Renda Extra incide sobre o montante efetivamente recebido
-  const p1TitheBase = p1Salary + (couple.includeExtraInTithe ? p1ExtraReceived : 0);
-  const p2TitheBase = p2Salary + (couple.includeExtraInTithe ? p2ExtraReceived : 0);
+  // Dízimo sobre Renda Extra incide sobre o montante efetivamente recebido com applyTitheAndOffering ativo
+  const p1TitheBase = p1Salary + (couple.includeExtraInTithe ? p1ExtraTitheable : 0);
+  const p2TitheBase = p2Salary + (couple.includeExtraInTithe ? p2ExtraTitheable : 0);
 
   const p1Consecrated = Number(((p1TitheBase * (tithePct + p1OffPct)) / 100).toFixed(2));
   const p2Consecrated = Number(((p2TitheBase * (tithePct + p2OffPct)) / 100).toFixed(2));
@@ -77,8 +95,9 @@ export default function CoupleSplitView({ state, onUpdateCoupleSettings, onOpenM
       : 0.5;
   const p2ShareRatio = 1 - p1ShareRatio;
 
+  // Excluir 'dizimo' das despesas conjuntas para evitar dupla contagem de Doações Especiais (tx-don-*)
   const jointExpenses = monthTxs.filter(
-    (t) => t.type === 'expense' && t.owner === 'joint'
+    (t) => t.type === 'expense' && t.owner === 'joint' && t.category !== 'dizimo'
   );
   const p1IndividualExpenses = monthTxs.filter(
     (t) => t.type === 'expense' && t.owner === 'partner1' && t.category !== 'dizimo'

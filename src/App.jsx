@@ -4,7 +4,9 @@ import {
   formatCurrency,
   getMonthLabel,
   shiftYearMonth,
-  getEffectiveMonthIncome
+  getEffectiveMonthIncome,
+  buildSafeDueDate,
+  syncMonthIncomeAndTitheTransactions
 } from './utils/formatters';
 import DashboardView from './components/DashboardView';
 import CommitmentsView from './components/CommitmentsView';
@@ -85,10 +87,10 @@ export default function App() {
           }
         }
 
-        return {
+        const baseLoadedState = {
           ...INITIAL_STATE,
           ...parsed,
-          version: '1.4.0',
+          version: '1.5.0',
           couple: {
             ...INITIAL_STATE.couple,
             ...(parsed.couple || {}),
@@ -110,11 +112,25 @@ export default function App() {
               ? parsed.extraIncomes
               : INITIAL_STATE.extraIncomes
         };
+
+        return {
+          ...baseLoadedState,
+          transactions: syncMonthIncomeAndTitheTransactions(
+            baseLoadedState,
+            baseLoadedState.selectedMonth || '2026-11'
+          )
+        };
       }
     } catch (e) {
       console.error('Erro ao ler localStorage:', e);
     }
-    return INITIAL_STATE;
+    return {
+      ...INITIAL_STATE,
+      transactions: syncMonthIncomeAndTitheTransactions(
+        INITIAL_STATE,
+        INITIAL_STATE.selectedMonth || '2026-11'
+      )
+    };
   });
 
   const [activeRoute, setActiveRoute] = useState('dashboard');
@@ -132,7 +148,7 @@ export default function App() {
     type: 'expense',
     category: 'mercado',
     amount: '',
-    dueDate: `${state.selectedMonth}-${String(defaultCard.dueDay || 15).padStart(2, '0')}`,
+    dueDate: buildSafeDueDate(state.selectedMonth, defaultCard.dueDay || 15),
     status: 'pending',
     owner: 'joint',
     paidBy: defaultCard.owner === 'partner2' ? 'partner2' : 'partner1',
@@ -155,6 +171,21 @@ export default function App() {
     document.body.className = state.couple?.theme || 'theme-emerald';
   }, [state]);
 
+  // Navegação de Mês na Sidebar garantindo sincronização de Salários e Primícias para qualquer mês passado ou futuro
+  const handleNavigateMonth = (delta) => {
+    setState((prev) => {
+      const nextMonth = shiftYearMonth(prev.selectedMonth, delta);
+      const nextState = {
+        ...prev,
+        selectedMonth: nextMonth
+      };
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, nextMonth)
+      };
+    });
+  };
+
   const handleOpenNewTransaction = (type = 'expense', preselectedCardId = null) => {
     const chosenCard =
       (preselectedCardId && state.cards.find((c) => c.id === preselectedCardId)) ||
@@ -162,14 +193,15 @@ export default function App() {
       { id: 'card-inter', dueDay: 15, owner: 'partner1' };
 
     const isExpense = type === 'expense';
-    const dueDayStr = String(chosenCard.dueDay || 15).padStart(2, '0');
 
     setTxForm({
       title: '',
       type,
-      category: type === 'income' ? 'salario' : 'mercado',
+      category: type === 'income' ? 'extra' : 'mercado',
       amount: '',
-      dueDate: isExpense ? `${state.selectedMonth}-${dueDayStr}` : `${state.selectedMonth}-05`,
+      dueDate: isExpense
+        ? buildSafeDueDate(state.selectedMonth, chosenCard.dueDay || 15)
+        : `${state.selectedMonth}-05`,
       status: type === 'income' ? 'paid' : 'pending',
       owner: type === 'income' ? 'partner1' : 'joint',
       paidBy: chosenCard.owner === 'partner2' ? 'partner2' : 'partner1',
@@ -187,7 +219,7 @@ export default function App() {
       return;
     }
     const ym = txForm.dueDate ? txForm.dueDate.slice(0, 7) : state.selectedMonth;
-    const newDueDate = `${ym}-${String(chosen.dueDay || 15).padStart(2, '0')}`;
+    const newDueDate = buildSafeDueDate(ym, chosen.dueDay || 15);
     setTxForm((prev) => ({
       ...prev,
       cardId: newCardId,
@@ -253,6 +285,18 @@ export default function App() {
   };
 
   const handleDeleteTransaction = (txId) => {
+    const targetToConfirm = state.transactions.find((t) => t.id === txId);
+    if (
+      targetToConfirm &&
+      !window.confirm(
+        `Deseja realmente excluir o lançamento "${targetToConfirm.title}" (${formatCurrency(
+          targetToConfirm.amount
+        )})?`
+      )
+    ) {
+      return;
+    }
+
     setState((prev) => {
       const targetTx = prev.transactions.find((t) => t.id === txId);
       const remainingTransactions = prev.transactions.filter((t) => t.id !== txId);
@@ -321,16 +365,24 @@ export default function App() {
     showToast('Lançamento removido.');
   };
 
-  // Extra Income (Aulas Particulares & Vendas) Handlers
+  // Extra Income (Aulas Particulares & Vendas) Handlers — Sincronizados automaticamente com Primícias na Agenda
   const handleAddExtraIncome = (itemData) => {
     const newItem = {
       id: `ext-${Date.now()}`,
       ...itemData
     };
-    setState((prev) => ({
-      ...prev,
-      extraIncomes: [...(prev.extraIncomes || []), newItem]
-    }));
+    setState((prev) => {
+      const nextExtraIncomes = [...(prev.extraIncomes || []), newItem];
+      const targetYm = newItem.date ? newItem.date.slice(0, 7) : prev.selectedMonth;
+      const nextState = {
+        ...prev,
+        extraIncomes: nextExtraIncomes
+      };
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, targetYm)
+      };
+    });
     showToast(
       itemData.type === 'class'
         ? 'Aula particular registrada na semana! 🎓'
@@ -339,32 +391,67 @@ export default function App() {
   };
 
   const handleUpdateExtraIncome = (updatedItem) => {
-    setState((prev) => ({
-      ...prev,
-      extraIncomes: (prev.extraIncomes || []).map((i) =>
+    setState((prev) => {
+      const oldItem = (prev.extraIncomes || []).find((i) => i.id === updatedItem.id);
+      const oldYm = oldItem?.date ? oldItem.date.slice(0, 7) : prev.selectedMonth;
+      const newYm = updatedItem.date ? updatedItem.date.slice(0, 7) : prev.selectedMonth;
+      const nextExtraIncomes = (prev.extraIncomes || []).map((i) =>
         i.id === updatedItem.id ? { ...i, ...updatedItem } : i
-      )
-    }));
+      );
+      let nextState = {
+        ...prev,
+        extraIncomes: nextExtraIncomes
+      };
+      nextState = {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, oldYm)
+      };
+      if (newYm !== oldYm) {
+        nextState = {
+          ...nextState,
+          transactions: syncMonthIncomeAndTitheTransactions(nextState, newYm)
+        };
+      }
+      return nextState;
+    });
     showToast('Registro de renda extra atualizado com sucesso! ✨');
   };
 
   const handleToggleExtraIncomeStatus = (itemId) => {
-    setState((prev) => ({
-      ...prev,
-      extraIncomes: (prev.extraIncomes || []).map((i) =>
+    setState((prev) => {
+      const targetItem = (prev.extraIncomes || []).find((i) => i.id === itemId);
+      const targetYm = targetItem?.date ? targetItem.date.slice(0, 7) : prev.selectedMonth;
+      const nextExtraIncomes = (prev.extraIncomes || []).map((i) =>
         i.id === itemId
           ? { ...i, status: i.status === 'received' ? 'pending' : 'received' }
           : i
-      )
-    }));
-    showToast('Status do recebimento atualizado!');
+      );
+      const nextState = {
+        ...prev,
+        extraIncomes: nextExtraIncomes
+      };
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, targetYm)
+      };
+    });
+    showToast('Status do recebimento e primícias atualizados!');
   };
 
   const handleDeleteExtraIncome = (itemId) => {
-    setState((prev) => ({
-      ...prev,
-      extraIncomes: (prev.extraIncomes || []).filter((i) => i.id !== itemId)
-    }));
+    setState((prev) => {
+      const targetItem = (prev.extraIncomes || []).find((i) => i.id === itemId);
+      const targetYm = targetItem?.date ? targetItem.date.slice(0, 7) : prev.selectedMonth;
+      const nextExtraIncomes = (prev.extraIncomes || []).filter((i) => i.id !== itemId);
+      const nextState = {
+        ...prev,
+        extraIncomes: nextExtraIncomes
+      };
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, targetYm)
+      };
+    });
     showToast('Registro de renda extra removido.');
   };
 
@@ -418,6 +505,16 @@ export default function App() {
   };
 
   const handleDeleteCommitment = (commId) => {
+    const targetComm = state.commitments.find((c) => c.id === commId);
+    if (
+      targetComm &&
+      !window.confirm(
+        `Deseja realmente excluir o compromisso "${targetComm.title}" e todas as suas parcelas vinculadas?`
+      )
+    ) {
+      return;
+    }
+
     setState((prev) => ({
       ...prev,
       commitments: prev.commitments.filter((c) => c.id !== commId),
@@ -439,18 +536,29 @@ export default function App() {
   };
 
   const handleUpdateCard = (cardId, updatedCardData) => {
-    const newDueDayStr = String(updatedCardData.dueDay || 15).padStart(2, '0');
+    const dueDayNum = Number(updatedCardData.dueDay) || 15;
+    const newPaidBy =
+      updatedCardData.owner === 'partner2'
+        ? 'partner2'
+        : updatedCardData.owner === 'partner1'
+        ? 'partner1'
+        : null;
+
     setState((prev) => {
       // 1. Update card
       const updatedCards = prev.cards.map((c) =>
         c.id === cardId ? { ...c, ...updatedCardData } : c
       );
 
-      // 2. Update pending transactions linked to this card
+      // 2. Update pending transactions linked to this card with safe month day clamping & updated paidBy
       const updatedTransactions = prev.transactions.map((t) => {
         if (t.cardId === cardId && t.status === 'pending' && t.dueDate) {
           const ym = t.dueDate.slice(0, 7);
-          return { ...t, dueDate: `${ym}-${newDueDayStr}` };
+          return {
+            ...t,
+            dueDate: buildSafeDueDate(ym, dueDayNum),
+            paidBy: newPaidBy || t.paidBy
+          };
         }
         return t;
       });
@@ -466,17 +574,18 @@ export default function App() {
             linked.length > 0
               ? linked[linked.length - 1].dueDate
               : comm.endDate
-              ? `${comm.endDate.slice(0, 7)}-${newDueDayStr}`
+              ? buildSafeDueDate(comm.endDate.slice(0, 7), dueDayNum)
               : comm.endDate;
 
           const newStartDate = comm.startDate
-            ? `${comm.startDate.slice(0, 7)}-${newDueDayStr}`
+            ? buildSafeDueDate(comm.startDate.slice(0, 7), dueDayNum)
             : comm.startDate;
 
           return {
             ...comm,
             startDate: newStartDate,
-            endDate: newEndDate
+            endDate: newEndDate,
+            paidBy: newPaidBy || comm.paidBy
           };
         }
         return comm;
@@ -489,12 +598,11 @@ export default function App() {
         commitments: updatedCommitments
       };
     });
-    showToast(`Cartão e datas de vencimento da fatura (dia ${updatedCardData.dueDay}) atualizados!`);
+    showToast(`Cartão e datas de vencimento da fatura (dia ${dueDayNum}) atualizados!`);
   };
 
   const handleDeleteCard = (cardId) => {
     setState((prev) => {
-      const cardToDelete = prev.cards.find((c) => c.id === cardId);
       const remainingCards = prev.cards.filter((c) => c.id !== cardId);
       const fallbackCard = remainingCards[0] || null;
 
@@ -562,16 +670,44 @@ export default function App() {
     showToast('Nova Caixinha / Meta criada!');
   };
 
-  const handleDepositGoal = (goalId, depositVal) => {
-    setState((prev) => ({
-      ...prev,
-      goals: prev.goals.map((g) =>
+  const handleDepositGoal = (goalId, depositVal, recordAsTransaction = false, paidBy = 'partner1') => {
+    setState((prev) => {
+      const targetGoal = prev.goals.find((g) => g.id === goalId);
+      const updatedGoals = prev.goals.map((g) =>
         g.id === goalId
           ? { ...g, currentAmount: Number(g.currentAmount || 0) + depositVal }
           : g
-      )
-    }));
-    showToast(`Aporte de ${formatCurrency(depositVal)} guardado na Caixinha! 🎉`);
+      );
+
+      let updatedTransactions = prev.transactions;
+      if (recordAsTransaction && targetGoal) {
+        const depositTx = {
+          id: `tx-goal-${Date.now()}`,
+          title: `Aporte na Caixinha: ${targetGoal.title}`,
+          type: 'expense',
+          category: 'viagens',
+          amount: depositVal,
+          dueDate: `${prev.selectedMonth}-10`,
+          paidDate: `${prev.selectedMonth}-10`,
+          status: 'paid',
+          owner: 'joint',
+          paidBy: paidBy || 'partner1',
+          paymentMethod: 'PIX'
+        };
+        updatedTransactions = [...prev.transactions, depositTx];
+      }
+
+      return {
+        ...prev,
+        goals: updatedGoals,
+        transactions: updatedTransactions
+      };
+    });
+    showToast(
+      recordAsTransaction
+        ? `Aporte de ${formatCurrency(depositVal)} guardado na Caixinha e registrado no mês! 🎉`
+        : `Aporte de ${formatCurrency(depositVal)} guardado na Caixinha! 🎉`
+    );
   };
 
   const handleDeleteGoal = (goalId) => {
@@ -627,152 +763,14 @@ export default function App() {
         }
       };
 
-      const tx1Title = `Salário Mensal — ${prev.couple.partner1Name}`;
-      const tx2Title = `Salário Mensal — ${prev.couple.partner2Name}`;
-
-      let newTransactions = [...prev.transactions];
-
-      // Salário Wesley
-      const p1TxIndex = newTransactions.findIndex(
-        (t) => t.type === 'income' && t.dueDate?.startsWith(ym) && t.owner === 'partner1'
-      );
-      if (p1TxIndex >= 0) {
-        newTransactions[p1TxIndex] = {
-          ...newTransactions[p1TxIndex],
-          amount: p1Sal
-        };
-      } else if (p1Sal > 0) {
-        newTransactions.push({
-          id: `tx-inc-p1-${ym}`,
-          title: tx1Title,
-          type: 'income',
-          category: 'salario',
-          amount: p1Sal,
-          dueDate: `${ym}-05`,
-          paidDate: `${ym}-05`,
-          status: 'paid',
-          owner: 'partner1',
-          paidBy: 'partner1',
-          paymentMethod: 'PIX'
-        });
-      }
-
-      // Salário Beatriz
-      const p2TxIndex = newTransactions.findIndex(
-        (t) => t.type === 'income' && t.dueDate?.startsWith(ym) && t.owner === 'partner2'
-      );
-      if (p2TxIndex >= 0) {
-        newTransactions[p2TxIndex] = {
-          ...newTransactions[p2TxIndex],
-          amount: p2Sal
-        };
-      } else if (p2Sal > 0) {
-        newTransactions.push({
-          id: `tx-inc-p2-${ym}`,
-          title: tx2Title,
-          type: 'income',
-          category: 'salario',
-          amount: p2Sal,
-          dueDate: `${ym}-05`,
-          paidDate: `${ym}-05`,
-          status: 'paid',
-          owner: 'partner2',
-          paidBy: 'partner2',
-          paymentMethod: 'PIX'
-        });
-      }
-
-      // Sincronizar transações de Dízimo e Ofertas daquele mês (atualizar ou criar se não existirem)
-      const tithePct = prev.couple.titheEnabled ? Number(prev.couple.tithePercent ?? 10) : 0;
-      const p1OffPct = prev.couple.titheEnabled ? Number(prev.couple.partner1OfferingPercent ?? 5) : 0;
-      const p2OffPct = prev.couple.titheEnabled ? Number(prev.couple.partner2OfferingPercent ?? 5) : 0;
-
-      // Se includeExtraInTithe estiver ativo, somar a renda extra recebida do mês
-      const monthExtras = (prev.extraIncomes || []).filter((i) => i.date?.startsWith(ym));
-      const p1Extra = prev.couple.includeExtraInTithe
-        ? monthExtras.filter((i) => i.owner === 'partner1' && i.status === 'received').reduce((a, i) => a + Number(i.amount || 0), 0)
-        : 0;
-      const p2Extra = prev.couple.includeExtraInTithe
-        ? monthExtras.filter((i) => i.owner === 'partner2' && i.status === 'received').reduce((a, i) => a + Number(i.amount || 0), 0)
-        : 0;
-
-      const p1TitheTotal = Number((((p1Sal + p1Extra) * (tithePct + p1OffPct)) / 100).toFixed(2));
-      const p2TitheTotal = Number((((p2Sal + p2Extra) * (tithePct + p2OffPct)) / 100).toFixed(2));
-
-      // Dízimo Wesley
-      const p1DizIdx = newTransactions.findIndex(
-        (t) => t.category === 'dizimo' && t.dueDate?.startsWith(ym) && t.owner === 'partner1'
-      );
-      if (p1DizIdx >= 0) {
-        newTransactions[p1DizIdx] = { ...newTransactions[p1DizIdx], amount: p1TitheTotal };
-      } else if (prev.couple.titheEnabled && p1TitheTotal > 0) {
-        newTransactions.push({
-          id: `tx-diz-p1-${ym}`,
-          title: `Dízimo (10%) + Oferta (${p1OffPct}%) — ${prev.couple.partner1Name}`,
-          type: 'expense',
-          category: 'dizimo',
-          amount: p1TitheTotal,
-          dueDate: `${ym}-06`,
-          paidDate: ym <= prev.selectedMonth ? `${ym}-06` : '',
-          status: ym < prev.selectedMonth ? 'paid' : (ym === prev.selectedMonth ? 'paid' : 'pending'),
-          owner: 'partner1',
-          paidBy: 'partner1',
-          paymentMethod: 'PIX'
-        });
-      }
-
-      // Dízimo Beatriz
-      const p2DizIdx = newTransactions.findIndex(
-        (t) => t.category === 'dizimo' && t.dueDate?.startsWith(ym) && t.owner === 'partner2'
-      );
-      if (p2DizIdx >= 0) {
-        newTransactions[p2DizIdx] = { ...newTransactions[p2DizIdx], amount: p2TitheTotal };
-      } else if (prev.couple.titheEnabled && p2TitheTotal > 0) {
-        newTransactions.push({
-          id: `tx-diz-p2-${ym}`,
-          title: `Dízimo (10%) + Oferta (${p2OffPct}%) — ${prev.couple.partner2Name}`,
-          type: 'expense',
-          category: 'dizimo',
-          amount: p2TitheTotal,
-          dueDate: `${ym}-06`,
-          paidDate: ym <= prev.selectedMonth ? `${ym}-06` : '',
-          status: ym < prev.selectedMonth ? 'paid' : (ym === prev.selectedMonth ? 'paid' : 'pending'),
-          owner: 'partner2',
-          paidBy: 'partner2',
-          paymentMethod: 'PIX'
-        });
-      }
-
-      // Doação especial / Caridade
-      const donIdx = newTransactions.findIndex(
-        (t) => t.id === `tx-don-${ym}` || (t.category === 'dizimo' && t.title?.includes('Doações Especiais') && t.dueDate?.startsWith(ym))
-      );
-      if (don > 0) {
-        if (donIdx >= 0) {
-          newTransactions[donIdx] = { ...newTransactions[donIdx], amount: don };
-        } else {
-          newTransactions.push({
-            id: `tx-don-${ym}`,
-            title: `Doações Especiais & Caridade — ${getMonthLabel(ym)}`,
-            type: 'expense',
-            category: 'dizimo',
-            amount: don,
-            dueDate: `${ym}-10`,
-            paidDate: '',
-            status: 'pending',
-            owner: 'joint',
-            paidBy: 'partner1',
-            paymentMethod: 'PIX'
-          });
-        }
-      } else if (donIdx >= 0) {
-        newTransactions.splice(donIdx, 1);
-      }
+      const nextState = {
+        ...prev,
+        monthlyIncomes: updatedMonthlyIncomes
+      };
 
       return {
-        ...prev,
-        monthlyIncomes: updatedMonthlyIncomes,
-        transactions: newTransactions
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, ym)
       };
     });
 
@@ -819,13 +817,45 @@ export default function App() {
   };
 
   const handleUpdateCoupleSettings = (updates) => {
-    setState((prev) => ({
-      ...prev,
-      couple: {
-        ...prev.couple,
-        ...updates
-      }
-    }));
+    setState((prev) => {
+      const ym = prev.selectedMonth;
+      const hasIncomeOrDonationUpdate =
+        updates.partner1Income !== undefined ||
+        updates.partner2Income !== undefined ||
+        updates.donationAmount !== undefined;
+
+      const updatedMonthlyIncomes =
+        hasIncomeOrDonationUpdate && prev.monthlyIncomes?.[ym]
+          ? {
+              ...prev.monthlyIncomes,
+              [ym]: {
+                ...prev.monthlyIncomes[ym],
+                ...(updates.partner1Income !== undefined
+                  ? { partner1Income: Number(updates.partner1Income) }
+                  : {}),
+                ...(updates.partner2Income !== undefined
+                  ? { partner2Income: Number(updates.partner2Income) }
+                  : {}),
+                ...(updates.donationAmount !== undefined
+                  ? { donationAmount: Number(updates.donationAmount) }
+                  : {})
+              }
+            }
+          : prev.monthlyIncomes;
+
+      const nextState = {
+        ...prev,
+        couple: {
+          ...prev.couple,
+          ...updates
+        },
+        monthlyIncomes: updatedMonthlyIncomes
+      };
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, ym)
+      };
+    });
     showToast('Configurações de Wesley & Beatriz atualizadas!');
   };
 
@@ -874,10 +904,10 @@ export default function App() {
         ? parsedState.commitments.map((c) => ({ ...c, cardId: mapCardId(c.cardId) }))
         : INITIAL_STATE.commitments;
 
-      setState({
+      const importedBase = {
         ...INITIAL_STATE,
         ...parsedState,
-        version: '1.4.0',
+        version: '1.5.0',
         cards: sanitizedCards,
         transactions: sanitizedTransactions,
         commitments: sanitizedCommitments,
@@ -885,6 +915,14 @@ export default function App() {
           ...INITIAL_STATE.couple,
           ...(parsedState.couple || {})
         }
+      };
+
+      setState({
+        ...importedBase,
+        transactions: syncMonthIncomeAndTitheTransactions(
+          importedBase,
+          importedBase.selectedMonth || '2026-11'
+        )
       });
       showToast('Backup JSON restaurado com sucesso! ✨');
     } catch (err) {
@@ -899,7 +937,13 @@ export default function App() {
         'Tem certeza de que deseja restaurar os dados de demonstração? Todas as suas alterações, contas, metas e rendas cadastradas serão substituídas pelo modelo inicial.'
       )
     ) {
-      setState(INITIAL_STATE);
+      setState({
+        ...INITIAL_STATE,
+        transactions: syncMonthIncomeAndTitheTransactions(
+          INITIAL_STATE,
+          INITIAL_STATE.selectedMonth || '2026-11'
+        )
+      });
       showToast('Dados de demonstração restaurados!');
     }
   };
@@ -936,12 +980,7 @@ export default function App() {
           <button
             className="month-nav-btn"
             title="Mês anterior"
-            onClick={() =>
-              setState((prev) => ({
-                ...prev,
-                selectedMonth: shiftYearMonth(prev.selectedMonth, -1)
-              }))
-            }
+            onClick={() => handleNavigateMonth(-1)}
           >
             <i className="fa-solid fa-chevron-left"></i>
           </button>
@@ -952,12 +991,7 @@ export default function App() {
           <button
             className="month-nav-btn"
             title="Próximo mês"
-            onClick={() =>
-              setState((prev) => ({
-                ...prev,
-                selectedMonth: shiftYearMonth(prev.selectedMonth, 1)
-              }))
-            }
+            onClick={() => handleNavigateMonth(1)}
           >
             <i className="fa-solid fa-chevron-right"></i>
           </button>
@@ -1527,10 +1561,24 @@ export default function App() {
 
                 const monthExtras = (state.extraIncomes || []).filter((i) => i.date?.startsWith(ym));
                 const p1Extra = state.couple.includeExtraInTithe
-                  ? monthExtras.filter((i) => i.owner === 'partner1' && i.status === 'received').reduce((a, i) => a + Number(i.amount || 0), 0)
+                  ? monthExtras
+                      .filter(
+                        (i) =>
+                          i.owner === 'partner1' &&
+                          i.status === 'received' &&
+                          i.applyTitheAndOffering !== false
+                      )
+                      .reduce((a, i) => a + Number(i.amount || 0), 0)
                   : 0;
                 const p2Extra = state.couple.includeExtraInTithe
-                  ? monthExtras.filter((i) => i.owner === 'partner2' && i.status === 'received').reduce((a, i) => a + Number(i.amount || 0), 0)
+                  ? monthExtras
+                      .filter(
+                        (i) =>
+                          i.owner === 'partner2' &&
+                          i.status === 'received' &&
+                          i.applyTitheAndOffering !== false
+                      )
+                      .reduce((a, i) => a + Number(i.amount || 0), 0)
                   : 0;
                 const totalExtraM = p1Extra + p2Extra;
 

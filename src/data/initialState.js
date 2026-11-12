@@ -63,7 +63,7 @@ export const THEMES = [
 ];
 
 export const INITIAL_STATE = {
-  version: '1.4.0',
+  version: '1.5.0',
   selectedMonth: '2026-11',
   ownerFilter: 'all', // 'all' | 'joint' | 'partner1' | 'partner2'
   couple: {
@@ -315,13 +315,13 @@ export const INITIAL_STATE = {
       paymentMethod: 'PIX'
     },
 
-    // DÍZIMO E OFERTAS NOVEMBRO 2026
+    // DÍZIMO E OFERTAS NOVEMBRO 2026 (Salário + Renda Extra Recebida)
     {
       id: 'tx-diz-1',
-      title: 'Dízimo (10%) + Oferta (5%) — Salário Wesley',
+      title: 'Dízimo (10%) + Oferta (5%) — Wesley',
       type: 'expense',
       category: 'dizimo',
-      amount: 975,
+      amount: 1066.5,
       dueDate: '2026-11-06',
       paidDate: '2026-11-06',
       status: 'paid',
@@ -331,10 +331,10 @@ export const INITIAL_STATE = {
     },
     {
       id: 'tx-diz-2',
-      title: 'Dízimo (10%) + Oferta (5%) — Salário Beatriz',
+      title: 'Dízimo (10%) + Oferta (5%) — Beatriz',
       type: 'expense',
       category: 'dizimo',
-      amount: 825,
+      amount: 873,
       dueDate: '2026-11-06',
       paidDate: '2026-11-06',
       status: 'paid',

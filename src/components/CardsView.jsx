@@ -1,5 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { formatCurrency, formatDateBR, getMonthLabel } from '../utils/formatters';
+import {
+  formatCurrency,
+  formatDateBR,
+  getMonthLabel,
+  buildSafeDueDate
+} from '../utils/formatters';
 
 export default function CardsView({
   state,
@@ -11,7 +16,7 @@ export default function CardsView({
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCardId, setEditingCardId] = useState(null);
-  const [selectedCardInvoice, setSelectedCardInvoice] = useState(null);
+  const [selectedCardInvoiceId, setSelectedCardInvoiceId] = useState(null);
 
   const [form, setForm] = useState({
     name: '',
@@ -91,7 +96,7 @@ export default function CardsView({
           ? Math.min(100, Math.round((totalUsedLimit / card.limit) * 100))
           : 0;
 
-      const invoiceDueDateStr = `${selectedMonth}-${String(card.dueDay || 15).padStart(2, '0')}`;
+      const invoiceDueDateStr = buildSafeDueDate(selectedMonth, card.dueDay || 15);
 
       return {
         ...card,
@@ -104,7 +109,12 @@ export default function CardsView({
         invoiceDueDateStr
       };
     });
-  }, [cards, transactions, selectedMonth]);
+  }, [filteredCards, transactions, selectedMonth, ownerFilter]);
+
+  const selectedCardInvoice = useMemo(
+    () => enrichedCards.find((c) => c.id === selectedCardInvoiceId) || null,
+    [enrichedCards, selectedCardInvoiceId]
+  );
 
   const totalInvoicesMonth = enrichedCards.reduce((acc, c) => acc + c.monthInvoiceTotal, 0);
   const totalAvailableAllCards = enrichedCards.reduce((acc, c) => acc + c.availableLimit, 0);
@@ -271,7 +281,7 @@ export default function CardsView({
                 </button>
                 <button
                   className="btn btn-sm btn-outline"
-                  onClick={() => setSelectedCardInvoice(card)}
+                  onClick={() => setSelectedCardInvoiceId(card.id)}
                 >
                   <i className="fa-solid fa-list-check"></i> Ver Fatura ({card.monthInvoiceTxs.length})
                 </button>
@@ -322,7 +332,7 @@ export default function CardsView({
       {selectedCardInvoice && (
         <div
           className="modal-backdrop"
-          onClick={() => setSelectedCardInvoice(null)}
+          onClick={() => setSelectedCardInvoiceId(null)}
         >
           <div className="modal-box lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -332,7 +342,7 @@ export default function CardsView({
               </h3>
               <button
                 className="close-btn"
-                onClick={() => setSelectedCardInvoice(null)}
+                onClick={() => setSelectedCardInvoiceId(null)}
               >
                 <i className="fa-solid fa-xmark"></i>
               </button>
@@ -407,7 +417,7 @@ export default function CardsView({
             <div className="modal-footer">
               <button
                 className="btn btn-primary"
-                onClick={() => setSelectedCardInvoice(null)}
+                onClick={() => setSelectedCardInvoiceId(null)}
               >
                 Fechar Fatura
               </button>

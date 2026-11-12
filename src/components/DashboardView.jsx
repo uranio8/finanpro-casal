@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Chart as ChartJS,
   ArcElement,
@@ -15,7 +15,8 @@ import {
   formatShortDateBR,
   getMonthLabel,
   getDaysDiffFromToday,
-  getEffectiveMonthIncome
+  getEffectiveMonthIncome,
+  isAutoSalaryTransaction
 } from '../utils/formatters';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
@@ -39,6 +40,26 @@ export default function DashboardView({
     transactions,
     extraIncomes = []
   } = state;
+
+  // Sincronizar ano do gráfico de Fluxo de Caixa ao navegar entre anos na Sidebar
+  useEffect(() => {
+    const activeYr = selectedMonth ? selectedMonth.split('-')[0] : '2026';
+    if (activeYr) {
+      setCashFlowYear(activeYr);
+    }
+  }, [selectedMonth]);
+
+  // Anos disponíveis dinamicamente para o gráfico de Fluxo de Caixa (suporta parcelamentos 36x em 2028/2029)
+  const availableYears = useMemo(() => {
+    const yrs = new Set(['2026', '2027']);
+    if (selectedMonth) yrs.add(selectedMonth.split('-')[0]);
+    transactions.forEach((t) => {
+      if (t.dueDate && t.dueDate.length >= 4) {
+        yrs.add(t.dueDate.slice(0, 4));
+      }
+    });
+    return Array.from(yrs).sort();
+  }, [transactions, selectedMonth]);
 
   // Filter transactions by ownerFilter
   const filteredTransactions = useMemo(() => {
@@ -90,10 +111,10 @@ export default function DashboardView({
     return effectiveMonthIncome.partner1Income + effectiveMonthIncome.partner2Income;
   }, [effectiveMonthIncome, ownerFilter]);
 
-  // Receitas Avulsas adicionadas diretamente via "+ Nova Receita" em Lançamentos (excluindo salários)
+  // Receitas Avulsas adicionadas diretamente via "+ Nova Receita" em Lançamentos (excluindo salários automáticos)
   const adhocIncome = useMemo(() => {
     return monthTransactions
-      .filter((tx) => tx.type === 'income' && tx.category !== 'salario')
+      .filter((tx) => tx.type === 'income' && !isAutoSalaryTransaction(tx))
       .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
   }, [monthTransactions]);
 
@@ -114,7 +135,7 @@ export default function DashboardView({
           i.date &&
           i.date.startsWith(selectedMonth) &&
           i.owner === 'partner1' &&
-          i.applyTitheAndOffering &&
+          i.applyTitheAndOffering !== false &&
           i.status === 'received'
       )
       .reduce((acc, i) => acc + Number(i.amount || 0), 0);
@@ -125,7 +146,7 @@ export default function DashboardView({
           i.date &&
           i.date.startsWith(selectedMonth) &&
           i.owner === 'partner2' &&
-          i.applyTitheAndOffering &&
+          i.applyTitheAndOffering !== false &&
           i.status === 'received'
       )
       .reduce((acc, i) => acc + Number(i.amount || 0), 0);
@@ -185,21 +206,22 @@ export default function DashboardView({
     });
   }, [monthExpenses]);
 
+  // Próximos vencimentos e pagamentos realizados restritos ao mês selecionado (selectedMonth)
   const upcomingExpenses = useMemo(() => {
-    return filteredTransactions
-      .filter((t) => t.type === 'expense' && t.status === 'pending')
+    return monthExpenses
+      .filter((t) => t.status === 'pending')
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [filteredTransactions]);
+  }, [monthExpenses]);
 
   const nextDue = upcomingExpenses[0] || null;
   const nextDueDays = nextDue ? getDaysDiffFromToday(nextDue.dueDate) : null;
 
   const recentPaidExpenses = useMemo(() => {
-    return filteredTransactions
-      .filter((t) => t.type === 'expense' && t.status === 'paid')
+    return monthExpenses
+      .filter((t) => t.status === 'paid')
       .sort((a, b) => (b.paidDate || b.dueDate).localeCompare(a.paidDate || a.dueDate))
       .slice(0, 5);
-  }, [filteredTransactions]);
+  }, [monthExpenses]);
 
   // Category Breakdown for Doughnut & Budgets
   const categoryBreakdown = useMemo(() => {
@@ -670,7 +692,7 @@ export default function DashboardView({
             </p>
           </div>
           <div className="filter-pills">
-            {['2026', '2027'].map((yr) => (
+            {availableYears.map((yr) => (
               <button
                 key={yr}
                 className={`pill-btn ${cashFlowYear === yr ? 'active' : ''}`}

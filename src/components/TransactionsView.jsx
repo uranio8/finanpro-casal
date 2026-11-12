@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CATEGORIES, INCOME_CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
@@ -25,6 +25,11 @@ export default function TransactionsView({
   });
 
   const { selectedMonth, transactions, couple, cards = [], ownerFilter } = state;
+
+  // Limpa o filtro de dia selecionado ao navegar para outro mês
+  useEffect(() => {
+    setSelectedDay(null);
+  }, [selectedMonth]);
 
   const monthTransactions = useMemo(() => {
     return transactions
@@ -276,11 +281,20 @@ export default function TransactionsView({
               onChange={(e) => setCategoryFilter(e.target.value)}
             >
               <option value="all">Todas Categorias</option>
-              {CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              <optgroup label="Despesas">
+                {CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Receitas">
+                {INCOME_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
         </div>

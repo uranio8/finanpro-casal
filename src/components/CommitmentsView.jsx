@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
   formatDateBR,
-  addMonthsToDate
+  addMonthsToDate,
+  buildSafeDueDate
 } from '../utils/formatters';
 
 export default function CommitmentsView({
@@ -42,13 +43,25 @@ export default function CommitmentsView({
     hasDownPayment: false,
     downPayment: '',
     installmentsCount: 6,
-    startDate: `${state.selectedMonth}-${String(defaultCard.dueDay || 15).padStart(2, '0')}`,
+    startDate: buildSafeDueDate(state.selectedMonth, defaultCard.dueDay || 15),
     paymentMethod: 'Cartão de Crédito',
     cardId: defaultCard.id,
     owner: 'joint',
     paidBy: defaultCard.owner === 'partner2' ? 'partner2' : 'partner1',
     notes: ''
   });
+
+  // Atualiza a data inicial sugerida quando o mês selecionado muda e o formulário está em branco
+  useEffect(() => {
+    setForm((prev) => {
+      if (prev.title.trim() || prev.totalAmount) return prev;
+      const chosenCard = cards.find((c) => c.id === prev.cardId) || defaultCard;
+      return {
+        ...prev,
+        startDate: buildSafeDueDate(state.selectedMonth, chosenCard?.dueDay || 15)
+      };
+    });
+  }, [state.selectedMonth, cards]);
 
   const handleSelectCardInForm = (newCardId) => {
     const chosen = cards.find((c) => c.id === newCardId);
@@ -57,7 +70,7 @@ export default function CommitmentsView({
       return;
     }
     const ym = form.startDate ? form.startDate.slice(0, 7) : state.selectedMonth;
-    const newStartDate = `${ym}-${String(chosen.dueDay || 15).padStart(2, '0')}`;
+    const newStartDate = buildSafeDueDate(ym, chosen.dueDay || 15);
     setForm((prev) => ({
       ...prev,
       cardId: newCardId,
@@ -201,6 +214,10 @@ export default function CommitmentsView({
     const total = Number(form.totalAmount);
     const isRecurring = form.type === 'recurring';
     if (!form.title.trim() || total <= 0 || !form.startDate) return;
+    if (!installmentPreview.valid) {
+      window.alert('O valor da entrada inicial deve ser menor que o valor total do compromisso.');
+      return;
+    }
 
     onAddCommitment({
       ...form,
@@ -219,7 +236,7 @@ export default function CommitmentsView({
       hasDownPayment: false,
       downPayment: '',
       installmentsCount: 6,
-      startDate: `${state.selectedMonth}-${String(defaultCard.dueDay || 15).padStart(2, '0')}`,
+      startDate: buildSafeDueDate(state.selectedMonth, defaultCard.dueDay || 15),
       paymentMethod: 'Cartão de Crédito',
       cardId: defaultCard.id,
       owner: 'joint',
@@ -593,13 +610,15 @@ export default function CommitmentsView({
                   </div>
                 ) : (
                   <div className="form-group">
-                    <label htmlFor="comm-dummy-method">Forma de Liquidação</label>
-                    <input
-                      id="comm-dummy-method"
-                      type="text"
-                      disabled
-                      value={form.paymentMethod}
-                    />
+                    <label htmlFor="comm-paidby">Quem Paga a Conta? *</label>
+                    <select
+                      id="comm-paidby"
+                      value={form.paidBy}
+                      onChange={(e) => setForm({ ...form, paidBy: e.target.value })}
+                    >
+                      <option value="partner1">{couple.partner1Name}</option>
+                      <option value="partner2">{couple.partner2Name}</option>
+                    </select>
                   </div>
                 )}
               </div>
