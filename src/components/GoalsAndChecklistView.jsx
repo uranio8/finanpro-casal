@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { formatCurrency, formatDateBR, shiftYearMonth, getMonthLabel } from '../utils/formatters';
 
 export default function GoalsAndChecklistView({
@@ -18,6 +18,24 @@ export default function GoalsAndChecklistView({
   const [depositAmount, setDepositAmount] = useState('');
   const [recordDepositAsTx, setRecordDepositAsTx] = useState(true);
   const [depositPaidBy, setDepositPaidBy] = useState('partner1');
+
+  // Fechar modais ao pressionar tecla Escape (WCAG)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (depositModalGoal) {
+          setDepositModalGoal(null);
+          setDepositAmount('');
+        }
+        if (isGoalModalOpen) {
+          setIsGoalModalOpen(false);
+          setEditingGoalId(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [depositModalGoal, isGoalModalOpen]);
 
   const [goalForm, setGoalForm] = useState({
     title: '',

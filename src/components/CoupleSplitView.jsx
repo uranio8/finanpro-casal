@@ -528,60 +528,62 @@ export default function CoupleSplitView({
             {getMonthLabel(selectedMonth)}
           </h3>
         </div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Despesa da Casa</th>
-              <th className="text-center">Valor Total</th>
-              {!isUnified && (
-                <>
-                  <th className="text-center">Parte de {couple.partner1Name}</th>
-                  <th className="text-center">Parte de {couple.partner2Name}</th>
-                </>
-              )}
-              <th className="text-center">Pago por</th>
-              <th className="text-center">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jointExpenses.map((tx) => (
-              <tr key={tx.id}>
-                <td>
-                  <strong>{tx.title}</strong>
-                </td>
-                <td className="text-center">
-                  <strong className="font-mono-val">{formatCurrency(tx.amount)}</strong>
-                </td>
+        <div className="table-responsive">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Despesa da Casa</th>
+                <th className="text-center">Valor Total</th>
                 {!isUnified && (
                   <>
-                    <td className="text-center font-mono-val" style={{ color: 'var(--text-secondary)' }}>
-                      {formatCurrency(tx.amount * p1ShareRatio)}
-                    </td>
-                    <td className="text-center font-mono-val" style={{ color: 'var(--text-secondary)' }}>
-                      {formatCurrency(tx.amount * p2ShareRatio)}
-                    </td>
+                    <th className="text-center">Parte de {couple.partner1Name}</th>
+                    <th className="text-center">Parte de {couple.partner2Name}</th>
                   </>
                 )}
-                <td className="text-center">
-                  <span
-                    className="owner-badge"
-                    style={{
-                      backgroundColor: tx.paidBy === 'partner1' ? '#dbeafe' : '#fce7f3',
-                      color: tx.paidBy === 'partner1' ? '#1d4ed8' : '#be185d'
-                    }}
-                  >
-                    {tx.paidBy === 'partner1' ? couple.partner1Name : couple.partner2Name}
-                  </span>
-                </td>
-                <td className="text-center">
-                  <span className={`status-tag ${tx.status}`}>
-                    {tx.status === 'paid' ? 'Pago' : 'A Pagar'}
-                  </span>
-                </td>
+                <th className="text-center">Pago por</th>
+                <th className="text-center">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {jointExpenses.map((tx) => (
+                <tr key={tx.id}>
+                  <td>
+                    <strong>{tx.title}</strong>
+                  </td>
+                  <td className="text-center">
+                    <strong className="font-mono-val">{formatCurrency(tx.amount)}</strong>
+                  </td>
+                  {!isUnified && (
+                    <>
+                      <td className="text-center font-mono-val" style={{ color: 'var(--text-secondary)' }}>
+                        {formatCurrency(tx.amount * p1ShareRatio)}
+                      </td>
+                      <td className="text-center font-mono-val" style={{ color: 'var(--text-secondary)' }}>
+                        {formatCurrency(tx.amount * p2ShareRatio)}
+                      </td>
+                    </>
+                  )}
+                  <td className="text-center">
+                    <span
+                      className="owner-badge"
+                      style={{
+                        backgroundColor: tx.paidBy === 'partner1' ? '#dbeafe' : '#fce7f3',
+                        color: tx.paidBy === 'partner1' ? '#1d4ed8' : '#be185d'
+                      }}
+                    >
+                      {tx.paidBy === 'partner1' ? couple.partner1Name : couple.partner2Name}
+                    </span>
+                  </td>
+                  <td className="text-center">
+                    <span className={`status-tag ${tx.status}`}>
+                      {tx.status === 'paid' ? 'Pago' : 'A Pagar'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

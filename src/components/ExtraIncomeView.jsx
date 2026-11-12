@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   formatCurrency,
   formatDateBR,
@@ -37,6 +37,20 @@ export default function ExtraIncomeView({
 
   const { extraIncomes = [], selectedMonth, couple, ownerFilter } = state;
   const isJointFilter = ownerFilter === 'joint';
+
+  // Fechar modal ao pressionar tecla Escape (WCAG)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (isModalOpen) {
+          setIsModalOpen(false);
+          setEditingId(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen]);
 
   const openModalWithType = (type = 'class') => {
     setEditingId(null);
