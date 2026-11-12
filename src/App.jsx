@@ -397,6 +397,16 @@ export default function App() {
     showToast('Meta removida.');
   };
 
+  const handleUpdateGoal = (goalId, updatedGoalData) => {
+    setState((prev) => ({
+      ...prev,
+      goals: prev.goals.map((g) =>
+        g.id === goalId ? { ...g, ...updatedGoalData } : g
+      )
+    }));
+    showToast(`Meta "${updatedGoalData.title || 'Caixinha'}" atualizada com sucesso! ✨`);
+  };
+
   const handleToggleChecklist = (chkId) => {
     setState((prev) => ({
       ...prev,
@@ -654,6 +664,7 @@ export default function App() {
           <GoalsAndChecklistView
             state={state}
             onAddGoal={handleAddGoal}
+            onUpdateGoal={handleUpdateGoal}
             onDepositGoal={handleDepositGoal}
             onDeleteGoal={handleDeleteGoal}
             onToggleChecklist={handleToggleChecklist}
@@ -808,7 +819,7 @@ export default function App() {
                         >
                           {state.cards.map((c) => (
                             <option key={c.id} value={c.id}>
-                              {c.name} (Vence dia {c.dueDay})
+                              {c.name}
                             </option>
                           ))}
                         </select>

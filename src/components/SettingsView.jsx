@@ -21,9 +21,10 @@ export default function SettingsView({
     tithePercent: couple.tithePercent ?? 10,
     partner1OfferingPercent: couple.partner1OfferingPercent ?? 5,
     partner2OfferingPercent: couple.partner2OfferingPercent ?? 5,
+    donationAmount: couple.donationAmount ?? 0,
     includeExtraInTithe: couple.includeExtraInTithe ?? true,
     monthlySavingsTarget: couple.monthlySavingsTarget ?? 2500,
-    splitMode: couple.splitMode || 'proportional'
+    splitMode: couple.splitMode || 'unified'
   });
 
   const [budgetsForm, setBudgetsForm] = useState({ ...categoryBudgets });
@@ -40,6 +41,7 @@ export default function SettingsView({
   const p1Offering = (p1Sal * p1OffPct) / 100;
   const p2Tithe = (p2Sal * tithePct) / 100;
   const p2Offering = (p2Sal * p2OffPct) / 100;
+  const donationVal = Number(coupleForm.donationAmount || 0);
   const totalChurchFromSalary = p1Tithe + p1Offering + p2Tithe + p2Offering;
 
   const totalBudgetAllocated = Object.values(budgetsForm).reduce(
@@ -58,6 +60,7 @@ export default function SettingsView({
       tithePercent: Number(coupleForm.tithePercent) || 10,
       partner1OfferingPercent: Number(coupleForm.partner1OfferingPercent) || 0,
       partner2OfferingPercent: Number(coupleForm.partner2OfferingPercent) || 0,
+      donationAmount: Number(coupleForm.donationAmount) || 0,
       monthlySavingsTarget: Number(coupleForm.monthlySavingsTarget) || 0
     });
   };
@@ -237,12 +240,33 @@ export default function SettingsView({
               </div>
             </div>
 
-            {/* BOX DE SIMULAÇÃO AO VIVO DO DÍZIMO E OFERTAS */}
+            {/* CAMPO DE DOAÇÕES ADICIONAIS / ESPORÁDICAS */}
+            <div className="form-group" style={{ marginTop: '12px', marginBottom: '14px' }}>
+              <label htmlFor="don-amount">
+                <i className="fa-solid fa-hand-holding-heart text-emerald"></i> Doações Esporádicas / Especiais do Mês (R$) — Fora Dízimo e Oferta
+              </label>
+              <input
+                id="don-amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Ex: 200.00 (ajuda de custo a familiares, ação social ou caridade)"
+                value={coupleForm.donationAmount}
+                onChange={(e) =>
+                  setCoupleForm({ ...coupleForm, donationAmount: e.target.value })
+                }
+              />
+              <small style={{ color: 'var(--text-muted)', fontSize: '11.5px', marginTop: '3px', display: 'block' }}>
+                Valor separado pelo casal para doações voluntárias, caridade e abençoar vidas além do dízimo e oferta.
+              </small>
+            </div>
+
+            {/* BOX DE SIMULAÇÃO AO VIVO DO DÍZIMO, OFERTAS E DOAÇÕES */}
             <div className="installment-plan-box">
               <div className="flex-between wrap" style={{ marginBottom: '10px' }}>
                 <strong>
-                  <i className="fa-solid fa-church text-emerald"></i> Cálculo Automático das Primícias
-                  (Dízimo 10% + Oferta)
+                  <i className="fa-solid fa-church text-emerald"></i> Cálculo Automático das Primícias &amp; Doações
+                  (Dízimo 10% + Oferta + Doação)
                 </strong>
                 <label className="checkbox-inline" htmlFor="chk-extra-tithe">
                   <input
@@ -282,12 +306,12 @@ export default function SettingsView({
                 </div>
 
                 <div className="preview-pill">
-                  <span>Total Primícias dos Salários</span>
+                  <span>Total Primícias + Doações</span>
                   <strong className="text-emerald">
-                    {formatCurrency(totalChurchFromSalary)}
+                    {formatCurrency(totalChurchFromSalary + donationVal)}
                   </strong>
                   <small>
-                    Sobra Líquida Salários: {formatCurrency(totalIncome - totalChurchFromSalary)}
+                    Sobra Líquida: {formatCurrency(totalIncome - totalChurchFromSalary - donationVal)}
                   </small>
                 </div>
               </div>
@@ -315,6 +339,7 @@ export default function SettingsView({
                     setCoupleForm({ ...coupleForm, splitMode: e.target.value })
                   }
                 >
+                  <option value="unified">🤝 Tudo Junto / Sem Proporção (Orçamento Familiar Único)</option>
                   <option value="proportional">Proporcional à Renda de cada um</option>
                   <option value="equal">50% / 50% (Meio a Meio)</option>
                 </select>

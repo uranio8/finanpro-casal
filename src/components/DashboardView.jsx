@@ -124,6 +124,8 @@ export default function DashboardView({
     const p2Tithe = (p2BaseForTithe * tithePct) / 100;
     const p2Offering = (p2BaseForTithe * p2OffPct) / 100;
 
+    const donation = Number(couple.donationAmount || 0);
+
     return {
       tithePct,
       p1OffPct,
@@ -134,9 +136,10 @@ export default function DashboardView({
       p2Tithe,
       p2Offering,
       p2Total: p2Tithe + p2Offering,
+      donation,
       totalTithe: p1Tithe + p2Tithe,
       totalOffering: p1Offering + p2Offering,
-      grandTotal: p1Tithe + p1Offering + p2Tithe + p2Offering
+      grandTotal: p1Tithe + p1Offering + p2Tithe + p2Offering + donation
     };
   }, [couple, extraIncomes, selectedMonth]);
 

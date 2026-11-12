@@ -4,13 +4,15 @@ import { formatCurrency, formatDateBR } from '../utils/formatters';
 export default function GoalsAndChecklistView({
   state,
   onAddGoal,
+  onUpdateGoal,
   onDepositGoal,
   onDeleteGoal,
   onToggleChecklist,
   onAddChecklistItem,
   onDeleteChecklistItem
 }) {
-  const [isNewGoalOpen, setIsNewGoalOpen] = useState(false);
+  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [editingGoalId, setEditingGoalId] = useState(null);
   const [depositModalGoal, setDepositModalGoal] = useState(null);
   const [depositAmount, setDepositAmount] = useState('');
 
@@ -44,14 +46,8 @@ export default function GoalsAndChecklistView({
     'Fechamento & Revisão do Casal (Dia 21 a 30)'
   ];
 
-  const handleGoalSubmit = (e) => {
-    e.preventDefault();
-    if (!goalForm.title.trim() || Number(goalForm.targetAmount) <= 0) return;
-    onAddGoal({
-      ...goalForm,
-      targetAmount: Number(goalForm.targetAmount),
-      currentAmount: Number(goalForm.currentAmount) || 0
-    });
+  const openNewGoalModal = () => {
+    setEditingGoalId(null);
     setGoalForm({
       title: '',
       category: 'Viagens & Sonhos',
@@ -62,7 +58,44 @@ export default function GoalsAndChecklistView({
       color: '#10b981',
       notes: ''
     });
-    setIsNewGoalOpen(false);
+    setIsGoalModalOpen(true);
+  };
+
+  const openEditGoalModal = (goal) => {
+    setEditingGoalId(goal.id);
+    setGoalForm({
+      title: goal.title || '',
+      category: goal.category || 'Geral',
+      icon: goal.icon || 'fa-bullseye',
+      targetAmount: goal.targetAmount || '',
+      currentAmount: goal.currentAmount ?? '',
+      deadline: goal.deadline || '',
+      color: goal.color || '#10b981',
+      notes: goal.notes || ''
+    });
+    setIsGoalModalOpen(true);
+  };
+
+  const handleGoalSubmit = (e) => {
+    e.preventDefault();
+    if (!goalForm.title.trim() || Number(goalForm.targetAmount) <= 0) return;
+
+    const payload = {
+      ...goalForm,
+      targetAmount: Number(goalForm.targetAmount),
+      currentAmount: Number(goalForm.currentAmount) || 0
+    };
+
+    if (editingGoalId) {
+      if (onUpdateGoal) {
+        onUpdateGoal(editingGoalId, payload);
+      }
+    } else {
+      onAddGoal(payload);
+    }
+
+    setIsGoalModalOpen(false);
+    setEditingGoalId(null);
   };
 
   const handleDepositSubmit = (e) => {
@@ -83,11 +116,11 @@ export default function GoalsAndChecklistView({
             <i className="fa-solid fa-bullseye"></i> Metas, Caixinhas &amp; Checklist Mensal
           </h2>
           <p>
-            Transformem os sonhos da vida de casados em metas claras com barra de progresso e rotina
-            financeira organizada!
+            Transformem os sonhos da vida de casados em metas claras com barra de progresso, rotina
+            organizada e total liberdade para editar seus objetivos!
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setIsNewGoalOpen(true)}>
+        <button className="btn btn-primary" onClick={openNewGoalModal}>
           <i className="fa-solid fa-plus"></i> + Nova Meta / Caixinha
         </button>
       </div>
@@ -142,13 +175,22 @@ export default function GoalsAndChecklistView({
                     <h4>{goal.title}</h4>
                   </div>
                 </div>
-                <button
-                  className="icon-btn danger"
-                  title="Excluir Meta"
-                  onClick={() => onDeleteGoal(goal.id)}
-                >
-                  <i className="fa-solid fa-trash"></i>
-                </button>
+                <div className="goal-top-actions">
+                  <button
+                    className="icon-btn"
+                    title="Editar Meta / Caixinha"
+                    onClick={() => openEditGoalModal(goal)}
+                  >
+                    <i className="fa-solid fa-pen-to-square"></i>
+                  </button>
+                  <button
+                    className="icon-btn danger"
+                    title="Excluir Meta"
+                    onClick={() => onDeleteGoal(goal.id)}
+                  >
+                    <i className="fa-solid fa-trash"></i>
+                  </button>
+                </div>
               </div>
 
               <p className="goal-notes">{goal.notes || 'Objetivo financeiro do casal'}</p>
@@ -191,7 +233,7 @@ export default function GoalsAndChecklistView({
         })}
       </div>
 
-      {/* CHECKLIST FINANCEIRO DO MÊS (ESTILO PLANEJEI!) */}
+      {/* CHECKLIST FINANCEIRO DO MÊS */}
       <div className="card">
         <div className="card-header flex-between">
           <div>
@@ -199,85 +241,83 @@ export default function GoalsAndChecklistView({
               <i className="fa-solid fa-list-check"></i> Checklist de Rotina Financeira do Mês
             </h3>
             <p className="card-subtitle">
-              Hábitos simples em casal para manter as contas 100% em dia todos os meses
+              Passo a passo mensal do casal para manter as contas em dia e sem atritos
             </p>
           </div>
-          <span className="badge-pill badge-emerald">
-            {checklistDoneCount}/{checklist.length} concluídas ({checklistPct}%)
-          </span>
+          <div className="checklist-progress-badge">
+            <strong>{checklistDoneCount}/{checklist.length} concluídos ({checklistPct}%)</strong>
+          </div>
         </div>
 
-        <div className="checklist-groups-grid">
-          {checklistGroups.map((groupName) => {
-            const items = checklist.filter((i) => i.group === groupName);
-            const doneInGroup = items.filter((i) => i.done).length;
-            const groupPct = items.length > 0 ? Math.round((doneInGroup / items.length) * 100) : 0;
-            const draft = newTaskByGroup[groupName] || '';
-
+        <div className="checklist-groups-wrap">
+          {checklistGroups.map((group) => {
+            const items = checklist.filter((c) => c.group === group);
             return (
-              <div key={groupName} className="checklist-group-box">
-                <div className="checklist-group-header">
-                  <strong>{groupName}</strong>
-                  <span>{groupPct}%</span>
-                </div>
-                <div className="progress-bar-track sm" style={{ marginBottom: '12px' }}>
-                  <div
-                    className="progress-bar-fill"
-                    style={{ width: `${groupPct}%` }}
-                  />
-                </div>
-
-                <div className="checklist-items-list">
+              <div key={group} className="chk-group-box">
+                <h4 className="chk-group-title">
+                  <i className="fa-solid fa-clock-rotate-left"></i> {group}
+                </h4>
+                <div className="chk-items-list">
                   {items.map((item) => (
                     <div
                       key={item.id}
-                      className={`checklist-item-row ${item.done ? 'done' : ''}`}
+                      className={`chk-item-row ${item.done ? 'done' : ''}`}
                     >
-                      <label className="chk-label">
+                      <label className="chk-checkbox-label">
                         <input
                           type="checkbox"
                           checked={item.done}
                           onChange={() => onToggleChecklist(item.id)}
                         />
-                        <span>{item.title}</span>
+                        <span className="chk-custom-box">
+                          <i className="fa-solid fa-check"></i>
+                        </span>
+                        <div className="chk-text-wrap">
+                          <span className="chk-title">{item.title}</span>
+                          <small className="chk-sub">{item.deadlineLabel}</small>
+                        </div>
                       </label>
-                      <div className="chk-right">
-                        <small className="chk-deadline">{item.deadlineLabel}</small>
-                        <button
-                          className="icon-btn-xs"
-                          onClick={() => onDeleteChecklistItem(item.id)}
-                        >
-                          <i className="fa-solid fa-xmark"></i>
-                        </button>
-                      </div>
+                      <button
+                        className="btn-delete-chk"
+                        title="Remover item da lista"
+                        onClick={() => onDeleteChecklistItem(item.id)}
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
                     </div>
                   ))}
+                  {items.length === 0 && (
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      Nenhuma tarefa neste bloco.
+                    </p>
+                  )}
                 </div>
 
-                <div className="checklist-inline-add">
+                <div className="add-chk-row">
                   <input
                     type="text"
-                    placeholder="Nova tarefa nesta etapa..."
-                    value={draft}
+                    placeholder={`+ Adicionar tarefa em "${group}"...`}
+                    value={newTaskByGroup[group] || ''}
                     onChange={(e) =>
-                      setNewTaskByGroup({ ...newTaskByGroup, [groupName]: e.target.value })
+                      setNewTaskByGroup({ ...newTaskByGroup, [group]: e.target.value })
                     }
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && draft.trim()) {
-                        onAddChecklistItem(groupName, draft.trim());
-                        setNewTaskByGroup({ ...newTaskByGroup, [groupName]: '' });
+                      if (e.key === 'Enter' && newTaskByGroup[group]?.trim()) {
+                        onAddChecklistItem(group, newTaskByGroup[group].trim());
+                        setNewTaskByGroup({ ...newTaskByGroup, [group]: '' });
                       }
                     }}
                   />
                   <button
                     className="btn btn-sm btn-outline"
                     onClick={() => {
-                      if (!draft.trim()) return;
-                      onAddChecklistItem(groupName, draft.trim());
-                      setNewTaskByGroup({ ...newTaskByGroup, [groupName]: '' });
+                      if (newTaskByGroup[group]?.trim()) {
+                        onAddChecklistItem(group, newTaskByGroup[group].trim());
+                        setNewTaskByGroup({ ...newTaskByGroup, [group]: '' });
+                      }
                     }}
                   >
-                    + Adicionar
+                    Adicionar
                   </button>
                 </div>
               </div>
@@ -286,43 +326,42 @@ export default function GoalsAndChecklistView({
         </div>
       </div>
 
-      {/* MODAL APORTE NA CAIXINHA */}
+      {/* MODAL: GUARDAR VALOR NA CAIXINHA */}
       {depositModalGoal && (
         <div className="modal-backdrop" onClick={() => setDepositModalGoal(null)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                <i className="fa-solid fa-piggy-bank"></i> Guardar na Caixinha: {depositModalGoal.title}
+                <i className="fa-solid fa-coins text-emerald"></i> Guardar Valor na Caixinha: {depositModalGoal.title}
               </h3>
               <button className="close-btn" onClick={() => setDepositModalGoal(null)}>
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
             <form onSubmit={handleDepositSubmit} className="modal-body">
-              <div className="summary-strip-box">
-                <div>
-                  <small>Saldo Atual Guardado</small>
-                  <strong className="text-emerald">
-                    {formatCurrency(depositModalGoal.currentAmount)}
-                  </strong>
-                </div>
-                <div>
-                  <small>Meta Final</small>
-                  <strong>{formatCurrency(depositModalGoal.targetAmount)}</strong>
-                </div>
-              </div>
               <div className="form-group">
-                <label htmlFor="dep-val">Valor do Novo Aporte (R$) *</label>
+                <label htmlFor="dep-amount">Quanto você quer guardar agora? (R$) *</label>
                 <input
-                  id="dep-val"
+                  id="dep-amount"
                   type="number"
                   step="0.01"
-                  min="1"
+                  min="0.01"
                   required
                   placeholder="Ex: 500.00"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
+                  autoFocus
                 />
+              </div>
+              <div className="installment-plan-box">
+                <small style={{ display: 'block', color: 'var(--text-muted)' }}>
+                  Saldo atual guardado: <strong>{formatCurrency(depositModalGoal.currentAmount)}</strong>
+                </small>
+                {Number(depositAmount) > 0 && (
+                  <small style={{ display: 'block', marginTop: '4px', color: 'var(--primary)', fontWeight: 700 }}>
+                    Novo saldo após aporte: {formatCurrency(Number(depositModalGoal.currentAmount) + Number(depositAmount))}
+                  </small>
+                )}
               </div>
               <div className="modal-footer">
                 <button
@@ -333,7 +372,7 @@ export default function GoalsAndChecklistView({
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  Confirmar Aporte
+                  <i className="fa-solid fa-check"></i> Confirmar Aporte
                 </button>
               </div>
             </form>
@@ -341,15 +380,16 @@ export default function GoalsAndChecklistView({
         </div>
       )}
 
-      {/* MODAL NOVA META */}
-      {isNewGoalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsNewGoalOpen(false)}>
+      {/* MODAL: CRIAR OU EDITAR META / CAIXINHA */}
+      {isGoalModalOpen && (
+        <div className="modal-backdrop" onClick={() => setIsGoalModalOpen(false)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                <i className="fa-solid fa-bullseye"></i> Criar Nova Meta / Caixinha
+                <i className="fa-solid fa-bullseye"></i>{' '}
+                {editingGoalId ? 'Editar Meta / Caixinha' : 'Criar Nova Meta / Caixinha'}
               </h3>
-              <button className="close-btn" onClick={() => setIsNewGoalOpen(false)}>
+              <button className="close-btn" onClick={() => setIsGoalModalOpen(false)}>
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
@@ -412,16 +452,38 @@ export default function GoalsAndChecklistView({
                   />
                 </div>
               </div>
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label htmlFor="g-color">Cor da Barra de Progresso</label>
+                  <input
+                    id="g-color"
+                    type="color"
+                    value={goalForm.color}
+                    onChange={(e) => setGoalForm({ ...goalForm, color: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="g-notes">Observações / Estratégia</label>
+                  <input
+                    id="g-notes"
+                    type="text"
+                    placeholder="Ex: Aplicar no CDB 100% CDI..."
+                    value={goalForm.notes}
+                    onChange={(e) => setGoalForm({ ...goalForm, notes: e.target.value })}
+                  />
+                </div>
+              </div>
               <div className="modal-footer">
                 <button
                   type="button"
                   className="btn btn-outline"
-                  onClick={() => setIsNewGoalOpen(false)}
+                  onClick={() => setIsGoalModalOpen(false)}
                 >
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  Criar Caixinha
+                  <i className="fa-solid fa-check"></i>{' '}
+                  {editingGoalId ? 'Salvar Alterações da Meta' : 'Criar Caixinha'}
                 </button>
               </div>
             </form>
@@ -431,4 +493,3 @@ export default function GoalsAndChecklistView({
     </div>
   );
 }
-

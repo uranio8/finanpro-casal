@@ -20,10 +20,7 @@ export default function CardsView({
     limit: '',
     closingDay: 8,
     dueDay: 15,
-    pointsPerReal: 1.0,
-    rewardProgram: 'Pontos / Cashback',
-    color: '#ea580c',
-    lastDigits: ''
+    color: '#ea580c'
   });
 
   const { cards, transactions, selectedMonth, couple } = state;
@@ -37,10 +34,7 @@ export default function CardsView({
       limit: '',
       closingDay: 8,
       dueDay: 15,
-      pointsPerReal: 1.0,
-      rewardProgram: 'Pontos / Cashback',
-      color: '#ea580c',
-      lastDigits: ''
+      color: '#ea580c'
     });
     setIsModalOpen(true);
   };
@@ -54,10 +48,7 @@ export default function CardsView({
       limit: card.limit,
       closingDay: card.closingDay || 10,
       dueDay: card.dueDay || 15,
-      pointsPerReal: card.pointsPerReal ?? 1.0,
-      rewardProgram: card.rewardProgram || 'Pontos Platinum',
-      color: card.color || '#ea580c',
-      lastDigits: card.lastDigits || '0000'
+      color: card.color || '#ea580c'
     });
     setIsModalOpen(true);
   };
@@ -91,11 +82,6 @@ export default function CardsView({
           ? Math.min(100, Math.round((totalUsedLimit / card.limit) * 100))
           : 0;
 
-      const ptsFactor = Number(card.pointsPerReal ?? 1.0);
-      const monthPoints = Math.round(monthInvoiceTotal * ptsFactor);
-      const totalAllTimeSpent = allCardTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0);
-      const totalPointsAccumulated = Math.round(totalAllTimeSpent * ptsFactor);
-
       const invoiceDueDateStr = `${selectedMonth}-${String(card.dueDay || 15).padStart(2, '0')}`;
 
       return {
@@ -106,15 +92,13 @@ export default function CardsView({
         totalUsedLimit,
         availableLimit,
         usagePct,
-        monthPoints,
-        totalPointsAccumulated,
         invoiceDueDateStr
       };
     });
   }, [cards, transactions, selectedMonth]);
 
   const totalInvoicesMonth = enrichedCards.reduce((acc, c) => acc + c.monthInvoiceTotal, 0);
-  const totalPointsMonth = enrichedCards.reduce((acc, c) => acc + c.monthPoints, 0);
+  const totalAvailableAllCards = enrichedCards.reduce((acc, c) => acc + c.availableLimit, 0);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -124,9 +108,7 @@ export default function CardsView({
       ...form,
       limit: Number(form.limit),
       closingDay: Number(form.closingDay) || 10,
-      dueDay: Number(form.dueDay) || 15,
-      pointsPerReal: Number(form.pointsPerReal) || 1.0,
-      lastDigits: form.lastDigits || '0000'
+      dueDay: Number(form.dueDay) || 15
     };
 
     if (editingCardId) {
@@ -144,13 +126,12 @@ export default function CardsView({
       <div className="section-header card">
         <div>
           <h2>
-            <i className="fa-solid fa-credit-card"></i> Cartões Platinum, Faturas &amp; Pontos (
+            <i className="fa-solid fa-credit-card"></i> Cartões de Crédito &amp; Faturas (
             {couple.partner1Name} &amp; {couple.partner2Name})
           </h2>
           <p>
-            Centralize as compras no <strong>Inter Platinum</strong> e no{' '}
-            <strong>Nubank Chroma Platinum</strong>, configure o dia de vencimento de cada um e
-            acompanhe faturas e pontos de <strong>{getMonthLabel(selectedMonth)}</strong>.
+            Gerencie os cartões do casal, ajuste limites, altere dias de fechamento/vencimento e
+            acompanhe faturas de <strong>{getMonthLabel(selectedMonth)}</strong>.
           </p>
         </div>
         <div className="header-btns">
@@ -168,14 +149,14 @@ export default function CardsView({
           <small>Total concentrado nos cartões neste mês</small>
         </div>
         <div className="card mini-kpi">
-          <span>Pontos Estimados no Mês (Platinum)</span>
-          <strong className="text-emerald">+{totalPointsMonth.toLocaleString('pt-BR')} pts</strong>
-          <small>Acumulados pelas compras na fatura atual</small>
+          <span>Limite Disponível Somado</span>
+          <strong className="text-emerald">{formatCurrency(totalAvailableAllCards)}</strong>
+          <small>Soma dos limites livres de todos os cartões</small>
         </div>
         <div className="card mini-kpi">
           <span>Cartões Ativos do Casal</span>
           <strong>{enrichedCards.length} cartões</strong>
-          <small>Clique em "Editar Vencimento" para ajustar datas</small>
+          <small>Clique em "Editar Cartão" para gerenciar</small>
         </div>
       </div>
 
@@ -183,7 +164,7 @@ export default function CardsView({
       <div className="credit-cards-grid">
         {enrichedCards.map((card) => (
           <div key={card.id} className="credit-card-box card">
-            {/* VISUAL DO CARTÃO */}
+            {/* VISUAL DO CARTÃO (LIMPO E SEM NÚMEROS FAKE) */}
             <div
               className="credit-card-visual"
               style={{
@@ -204,17 +185,12 @@ export default function CardsView({
                 <i className="fa-solid fa-wifi cc-chip-icon"></i>
               </div>
 
-              <div className="cc-number">•••• •••• •••• {card.lastDigits}</div>
-
               <div className="cc-bottom">
                 <div>
                   <small>Fecha todo dia {card.closingDay}</small>
                   <strong>Vencimento: Todo dia {card.dueDay}</strong>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <small style={{ display: 'block', opacity: 0.85 }}>
-                    {card.rewardProgram || 'Pontos Platinum'}
-                  </small>
                   <span className="cc-brand">{card.brand}</span>
                 </div>
               </div>
@@ -240,17 +216,6 @@ export default function CardsView({
                   ) : (
                     <span className="status-tag paid">Fatura Quitada</span>
                   )}
-                  <small
-                    style={{
-                      display: 'block',
-                      marginTop: '4px',
-                      color: 'var(--primary)',
-                      fontWeight: 700
-                    }}
-                  >
-                    <i className="fa-solid fa-star"></i> +{card.monthPoints.toLocaleString('pt-BR')}{' '}
-                    pts no mês
-                  </small>
                 </div>
               </div>
 
@@ -266,10 +231,11 @@ export default function CardsView({
                 </div>
                 <div className="progress-bar-track sm">
                   <div
-                    className={`progress-bar-fill ${
-                      card.usagePct > 85 ? 'danger' : 'emerald'
-                    }`}
-                    style={{ width: `${card.usagePct}%` }}
+                    className="progress-bar-fill"
+                    style={{
+                      width: `${card.usagePct}%`,
+                      backgroundColor: card.usagePct > 85 ? '#ef4444' : card.color
+                    }}
                   />
                 </div>
                 <div className="flex-between" style={{ marginTop: '4px' }}>
@@ -297,7 +263,7 @@ export default function CardsView({
                   className="btn btn-sm btn-outline"
                   onClick={() => openEditCardModal(card)}
                 >
-                  <i className="fa-solid fa-calendar-day"></i> Editar Vencimento
+                  <i className="fa-solid fa-pen-to-square"></i> Editar Cartão
                 </button>
                 {card.monthInvoicePending > 0 ? (
                   <button
@@ -332,68 +298,112 @@ export default function CardsView({
         ))}
       </div>
 
-      {/* MODAL DETALHES DA FATURA */}
+      {/* MODAL: VER DETALHES DA FATURA */}
       {selectedCardInvoice && (
-        <div className="modal-backdrop" onClick={() => setSelectedCardInvoice(null)}>
+        <div
+          className="modal-backdrop"
+          onClick={() => setSelectedCardInvoice(null)}
+        >
           <div className="modal-box lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <div>
-                <h3>
-                  Fatura: {selectedCardInvoice.name} — {getMonthLabel(selectedMonth)}
-                </h3>
-                <small>
-                  Fechamento dia {selectedCardInvoice.closingDay} · Vencimento dia{' '}
-                  {selectedCardInvoice.dueDay} (
-                  {formatDateBR(selectedCardInvoice.invoiceDueDateStr)}) · Total:{' '}
-                  <strong>{formatCurrency(selectedCardInvoice.monthInvoiceTotal)}</strong>
-                </small>
-              </div>
-              <button className="close-btn" onClick={() => setSelectedCardInvoice(null)}>
+              <h3>
+                <i className="fa-solid fa-receipt"></i> Fatura de{' '}
+                {selectedCardInvoice.name} — {getMonthLabel(selectedMonth)}
+              </h3>
+              <button
+                className="close-btn"
+                onClick={() => setSelectedCardInvoice(null)}
+              >
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
             <div className="modal-body">
-              <div className="schedule-list">
-                {selectedCardInvoice.monthInvoiceTxs.map((tx) => (
-                  <div key={tx.id} className="schedule-row">
-                    <div>
-                      <strong>{tx.title}</strong>
-                      <small>
-                        Vencimento da Fatura: {formatDateBR(tx.dueDate)}{' '}
-                        {tx.totalInstallments
-                          ? `· Parcela ${tx.installmentNumber}/${tx.totalInstallments}`
-                          : '· Compra à vista no crédito'}
-                      </small>
-                    </div>
-                    <div className="schedule-row-right">
-                      <strong>{formatCurrency(tx.amount)}</strong>
-                      <span className={`status-tag ${tx.status}`}>
-                        {tx.status === 'paid' ? 'Pago' : 'Na Fatura'}
-                      </span>
-                    </div>
+              <div className="flex-between wrap" style={{ marginBottom: '16px' }}>
+                <div>
+                  <small style={{ color: 'var(--text-muted)' }}>Total da Fatura deste Mês:</small>
+                  <div style={{ fontSize: '22px', fontWeight: 800 }}>
+                    {formatCurrency(selectedCardInvoice.monthInvoiceTotal)}
                   </div>
-                ))}
-                {selectedCardInvoice.monthInvoiceTxs.length === 0 && (
-                  <p style={{ textAlign: 'center', padding: '18px' }}>
-                    Nenhuma compra lançada neste cartão em {getMonthLabel(selectedMonth)}.
-                  </p>
-                )}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <small style={{ color: 'var(--text-muted)' }}>Vencimento da Fatura:</small>
+                  <div style={{ fontSize: '15px', fontWeight: 700 }}>
+                    Todo dia {selectedCardInvoice.dueDay} ({formatDateBR(selectedCardInvoice.invoiceDueDateStr)})
+                  </div>
+                </div>
               </div>
+
+              {selectedCardInvoice.monthInvoiceTxs.length === 0 ? (
+                <div className="empty-state">
+                  <p>Nenhum lançamento no cartão para o mês de {getMonthLabel(selectedMonth)}.</p>
+                </div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="text-center">Data</th>
+                      <th>Descrição</th>
+                      <th className="text-center">Parcela</th>
+                      <th className="text-center">Divisão</th>
+                      <th className="text-center">Valor</th>
+                      <th className="text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedCardInvoice.monthInvoiceTxs.map((t) => (
+                      <tr key={t.id}>
+                        <td className="text-center font-mono-val">{formatDateBR(t.dueDate)}</td>
+                        <td>
+                          <strong>{t.title}</strong>
+                        </td>
+                        <td className="text-center">
+                          {t.totalInstallments
+                            ? `${t.installmentNumber}/${t.totalInstallments}`
+                            : 'À vista'}
+                        </td>
+                        <td className="text-center">
+                          <span className={`owner-badge ${t.owner}`}>
+                            {t.owner === 'joint'
+                              ? 'Casa (Casal)'
+                              : t.owner === 'partner1'
+                              ? couple.partner1Name
+                              : couple.partner2Name}
+                          </span>
+                        </td>
+                        <td className="text-center">
+                          <strong className="font-mono-val">{formatCurrency(t.amount)}</strong>
+                        </td>
+                        <td className="text-center">
+                          <span className={`status-tag ${t.status}`}>
+                            {t.status === 'paid' ? 'Pago' : 'Pendente'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-primary"
+                onClick={() => setSelectedCardInvoice(null)}
+              >
+                Fechar Fatura
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL NOVO OU EDITAR CARTÃO (COM CONFIGURAÇÃO DE VENCIMENTO) */}
+      {/* MODAL: CRIAR OU EDITAR CARTÃO */}
       {isModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsModalOpen(false)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
                 <i className="fa-solid fa-credit-card"></i>{' '}
-                {editingCardId
-                  ? 'Editar Cartão & Dia de Vencimento'
-                  : 'Cadastrar Novo Cartão de Crédito'}
+                {editingCardId ? 'Editar Cartão de Crédito' : 'Cadastrar Novo Cartão de Crédito'}
               </h3>
               <button className="close-btn" onClick={() => setIsModalOpen(false)}>
                 <i className="fa-solid fa-xmark"></i>
@@ -427,7 +437,7 @@ export default function CardsView({
                 </div>
               </div>
 
-              <div className="form-grid-3">
+              <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="card-close">Dia que Fecha a Fatura *</label>
                   <input
@@ -452,42 +462,35 @@ export default function CardsView({
                     onChange={(e) => setForm({ ...form, dueDay: e.target.value })}
                   />
                 </div>
-                <div className="form-group">
-                  <label htmlFor="card-digits">4 Últimos Dígitos</label>
-                  <input
-                    id="card-digits"
-                    type="text"
-                    maxLength={4}
-                    placeholder="Ex: 9034"
-                    value={form.lastDigits}
-                    onChange={(e) => setForm({ ...form, lastDigits: e.target.value })}
-                  />
-                </div>
               </div>
 
               <div className="form-grid-3">
                 <div className="form-group">
-                  <label htmlFor="card-owner">Titular do Cartão</label>
+                  <label htmlFor="card-owner">Titular / Responsável</label>
                   <select
                     id="card-owner"
                     value={form.owner}
                     onChange={(e) => setForm({ ...form, owner: e.target.value })}
                   >
-                    <option value="partner1">{couple.partner1Name} (Inter Platinum)</option>
-                    <option value="partner2">{couple.partner2Name} (Nubank Chroma)</option>
+                    <option value="partner1">{couple.partner1Name}</option>
+                    <option value="partner2">{couple.partner2Name}</option>
                     <option value="joint">Conjunto da Casa</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="card-pts">Pontos por R$ 1 gasto</label>
-                  <input
-                    id="card-pts"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={form.pointsPerReal}
-                    onChange={(e) => setForm({ ...form, pointsPerReal: e.target.value })}
-                  />
+                  <label htmlFor="card-brand">Bandeira / Categoria</label>
+                  <select
+                    id="card-brand"
+                    value={form.brand}
+                    onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                  >
+                    <option value="Mastercard Platinum">Mastercard Platinum</option>
+                    <option value="Mastercard Black">Mastercard Black</option>
+                    <option value="Visa Platinum">Visa Platinum</option>
+                    <option value="Visa Infinite">Visa Infinite</option>
+                    <option value="Elo Nanquim">Elo Nanquim</option>
+                    <option value="Outro">Outro</option>
+                  </select>
                 </div>
                 <div className="form-group">
                   <label htmlFor="card-color">Cor Visual do Cartão</label>
@@ -510,7 +513,7 @@ export default function CardsView({
                 </button>
                 <button type="submit" className="btn btn-primary">
                   <i className="fa-solid fa-check"></i>{' '}
-                  {editingCardId ? 'Salvar Alterações e Atualizar Vencimentos' : 'Salvar Cartão'}
+                  {editingCardId ? 'Salvar Alterações do Cartão' : 'Salvar Cartão'}
                 </button>
               </div>
             </form>

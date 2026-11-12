@@ -75,8 +75,9 @@ export const INITIAL_STATE = {
     tithePercent: 10, // 10% Dízimo bíblico padrão
     partner1OfferingPercent: 5, // % da oferta sobre salário do Wesley
     partner2OfferingPercent: 5, // % da oferta sobre salário da Beatriz
+    donationAmount: 0, // Doações adicionais / esporádicas fora dízimo e oferta
     includeExtraInTithe: true, // Calcular Dízimo + Oferta também sobre a Renda Extra
-    splitMode: 'proportional', // 'proportional' | 'equal'
+    splitMode: 'unified', // 'unified' (Sem Proporção / Tudo Junto) | 'proportional' | 'equal'
     theme: 'theme-emerald',
     monthlySavingsTarget: 2500
   },
@@ -178,10 +179,7 @@ export const INITIAL_STATE = {
       limit: 10000,
       closingDay: 8,
       dueDay: 15,
-      pointsPerReal: 1.0,
-      rewardProgram: 'Inter Loop (Pontos)',
-      color: '#ea580c',
-      lastDigits: '9034'
+      color: '#ea580c'
     },
     {
       id: 'card-nubank',
@@ -191,10 +189,7 @@ export const INITIAL_STATE = {
       limit: 12000,
       closingDay: 15,
       dueDay: 22,
-      pointsPerReal: 1.0,
-      rewardProgram: 'Pontos & Benefícios Nubank',
-      color: '#6d28d9',
-      lastDigits: '4821'
+      color: '#6d28d9'
     }
   ],
   commitments: [

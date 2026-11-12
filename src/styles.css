@@ -1351,7 +1351,7 @@ td.text-center .row-actions {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 170px;
+  min-height: 140px;
   margin-bottom: 16px;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
 }
@@ -1372,21 +1372,17 @@ td.text-center .row-actions {
 }
 
 .cc-top h4 {
-  font-size: 17px;
+  font-size: 18px;
   margin-top: 6px;
-}
-
-.cc-number {
-  font-size: 16px;
-  letter-spacing: 2px;
-  font-family: monospace;
-  margin: 14px 0;
+  font-weight: 700;
+  letter-spacing: 0.2px;
 }
 
 .cc-bottom {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
+  margin-top: 18px;
 }
 
 .cc-bottom small {
@@ -1464,6 +1460,13 @@ td.text-center .row-actions {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 8px;
+}
+
+.goal-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .goal-title-wrap {
@@ -1596,6 +1599,11 @@ td.text-center .row-actions {
   align-items: center;
   gap: 18px;
   background: linear-gradient(135deg, var(--bg-card), var(--primary-soft));
+}
+
+.settlement-banner.unified-banner {
+  background: linear-gradient(135deg, var(--bg-card), #f0fdf4);
+  border: 1.5px solid #86efac;
 }
 
 .settlement-icon {
