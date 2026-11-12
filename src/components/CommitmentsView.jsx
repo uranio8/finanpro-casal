@@ -281,16 +281,19 @@ export default function CommitmentsView({
       'Onde Foi Feito',
       'Prazo Limite'
     ];
-    const rows = filteredList.map((c) => [
-      `"${c.title}"`,
-      c.type === 'installment' ? 'Parcelamento' : 'Fixa Recorrente',
-      c.category,
-      c.totalScheduled.toFixed(2),
-      c.totalPaid.toFixed(2),
-      c.remaining.toFixed(2),
-      `"${c.cardObj ? c.cardObj.name : c.paymentMethod}"`,
-      formatDateBR(c.computedEndDate)
-    ]);
+    const rows = filteredList.map((c) => {
+      const catObj = CATEGORIES.find((cat) => cat.id === c.category);
+      return [
+        `"${c.title}"`,
+        c.type === 'installment' ? 'Parcelamento' : 'Fixa Recorrente',
+        `"${catObj ? catObj.name : c.category}"`,
+        c.totalScheduled.toFixed(2),
+        c.totalPaid.toFixed(2),
+        c.remaining.toFixed(2),
+        `"${c.cardObj ? c.cardObj.name : c.paymentMethod}"`,
+        formatDateBR(c.computedEndDate)
+      ];
+    });
     const csv = [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -311,7 +314,8 @@ export default function CommitmentsView({
     const monthlyInstallment = simCount > 0 ? Number((simTotal / simCount).toFixed(2)) : 0;
     const baseStartYm = simForm.startMonth || state.selectedMonth || '2026-11';
 
-    const chosenCard = cards.find((c) => c.id === simForm.cardId) || null;
+    const isNoCard = simForm.cardId === 'pix';
+    const chosenCard = !isNoCard ? (cards.find((c) => c.id === simForm.cardId) || null) : null;
     const cardUsedLimit = chosenCard
       ? transactions
           .filter(
@@ -322,7 +326,7 @@ export default function CommitmentsView({
     const cardAvailableLimit = chosenCard
       ? Math.max(0, Number(chosenCard.limit || 0) - cardUsedLimit)
       : Infinity;
-    const fitsCardLimit = !chosenCard || simTotal <= cardAvailableLimit;
+    const fitsCardLimit = isNoCard || !chosenCard || simTotal <= cardAvailableLimit;
 
     const tithePct = couple.titheEnabled ? Number(couple.tithePercent ?? 10) : 0;
     const p1Off = couple.titheEnabled ? Number(couple.partner1OfferingPercent ?? 5) : 0;
@@ -400,7 +404,8 @@ export default function CommitmentsView({
   }, [simForm, state, cards, transactions, couple]);
 
   const handleConvertSimulationToReal = () => {
-    const chosen = cards.find((c) => c.id === simForm.cardId) || defaultCard;
+    const isNoCard = simForm.cardId === 'pix';
+    const chosen = !isNoCard ? (cards.find((c) => c.id === simForm.cardId) || defaultCard) : null;
     const startYm = simForm.startMonth || state.selectedMonth;
     setForm({
       title: simForm.title || 'Nova Compra Parcelada',
@@ -410,11 +415,11 @@ export default function CommitmentsView({
       hasDownPayment: false,
       downPayment: '',
       installmentsCount: Number(simForm.installmentsCount) || 6,
-      startDate: buildSafeDueDate(startYm, chosen.dueDay || 15),
-      paymentMethod: 'Cartão de Crédito',
-      cardId: chosen.id,
+      startDate: buildSafeDueDate(startYm, chosen?.dueDay || 15),
+      paymentMethod: isNoCard ? 'PIX' : 'Cartão de Crédito',
+      cardId: isNoCard ? '' : (chosen?.id || defaultCard.id),
       owner: 'joint',
-      paidBy: chosen.owner === 'partner2' ? 'partner2' : 'partner1',
+      paidBy: chosen?.owner === 'partner2' ? 'partner2' : 'partner1',
       notes: 'Criado a partir do Simulador Posso Comprar'
     });
     setIsModalOpen(true);
@@ -547,17 +552,22 @@ export default function CommitmentsView({
               </select>
             </div>
             <div className="form-group">
-              <label htmlFor="sim-card">Em qual Cartão?</label>
+              <label htmlFor="sim-card">Onde será feito o pagamento?</label>
               <select
                 id="sim-card"
                 value={simForm.cardId}
                 onChange={(e) => setSimForm({ ...simForm, cardId: e.target.value })}
               >
-                {cards.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                <optgroup label="Cartões de Crédito">
+                  {cards.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      💳 {c.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Outros Meios (Sem Cartão)">
+                  <option value="pix">💠 PIX / Boleto / Conta da Casa</option>
+                </optgroup>
               </select>
             </div>
           </div>
@@ -595,7 +605,7 @@ export default function CommitmentsView({
                 </small>
               </div>
               <div style={{ textAlign: 'right' }}>
-                {simulationResult.chosenCard && (
+                {simulationResult.chosenCard ? (
                   <div style={{ fontSize: '12px' }}>
                     Limite disponível no {simulationResult.chosenCard.name.split(' ')[0]}:{' '}
                     <strong
@@ -603,6 +613,10 @@ export default function CommitmentsView({
                     >
                       {formatCurrency(simulationResult.cardAvailableLimit)}
                     </strong>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Meio de pagamento: <strong className="text-emerald">PIX / Sem Cartão (Não compromete limite)</strong>
                   </div>
                 )}
                 {simulationResult.bestStartCandidate && (

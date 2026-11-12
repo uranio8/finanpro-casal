@@ -888,8 +888,8 @@ export default function App() {
           category: updates.category,
           owner: updates.owner,
           paidBy: isPending ? updates.paidBy : t.paidBy,
-          paymentMethod: isDownPayment ? t.paymentMethod : updates.paymentMethod,
-          cardId: isDownPayment ? '' : effectiveCardId,
+          paymentMethod: isDownPayment ? t.paymentMethod : (isPending ? updates.paymentMethod : t.paymentMethod),
+          cardId: isDownPayment ? '' : (isPending ? effectiveCardId : (t.cardId || effectiveCardId)),
           dueDate: nextDueDate,
           amount:
             isPending && !isDownPayment && newPendingInstallmentAmount !== null

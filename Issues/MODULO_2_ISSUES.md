@@ -136,3 +136,15 @@ Conforme a **Regra de Ouro #6 (Mandatória)** do `AGENTS.md`, todas as alteraç�
 8. **ISSUE-M2-08 (RESOLVIDO):** Primícias sobre renda extra agora incidem sobre o montante efetivamente recebido (`p1ExtraReceived` / `p2ExtraReceived`), sem onerar o casal por valores pendentes de alunos.
 9. **ISSUE-M2-09 (RESOLVIDO):** Tolerância do banner de acerto de contas refinada para precisão estrita de centavos (`< 0.01`).
 10. **ISSUE-M2-10 (RESOLVIDO):** Adicionada orientação visual clara em `SettingsView.jsx` explicando que salários cadastrados são padrões do casal e que ajustes em meses específicos devem ser feitos via "Renda do Mês".
+
+---
+
+## 🚀 Auditoria Automatizada Pós-Atualização v2.0 (Planejamento, Cartões, Compromissos & Simulador)
+
+* **Data da Execução:** 12/11/2026 (Execução 100% Headless / Segundo Plano)
+* **Resultado:** **19 blocos de testes automatizados (`M2-T01` a `M2-T19`) — 19 APROVADOS (0 Falhas)**
+
+### Checklist de Refinamento Pós-v2.0 (Módulo 2)
+- [x] **`ISSUE-M2-V2-01` (Preservação Histórica de Cartão ao Editar Contrato):** Em `handleUpdateCommitment` (`src/App.jsx`), a troca de cartão ou forma de pagamento agora preserva o `cardId` e `paymentMethod` originais de parcelas com `status === 'paid'`, alterando apenas as parcelas pendentes (`status === 'pending'`). Isso impede que faturas históricas já quitadas em meses anteriores sejam corrompidas retroativamente ao renegociar contratos.
+- [x] **`ISSUE-M2-V2-02` (Simulador "Posso Comprar?" com Opção Sem Cartão / PIX):** Em `src/components/CommitmentsView.jsx`, adicionada a opção *"💠 PIX / Boleto / Conta da Casa (Sem Cartão)"* no seletor de meio de pagamento do simulador. O motor calcula `fitsCardLimit = true`, não trava o limite dos cartões de crédito e, ao clicar em *"Transformar em Parcelamento Real"*, pré-carrega o formulário com `paymentMethod: 'PIX'` e `cardId: ''`.
+- [x] **`ISSUE-M2-V2-03` (Exportação CSV com Categoria Legível):** Em `src/components/CommitmentsView.jsx`, `handleExportCSV` agora mapeia os nomes amigáveis das categorias a partir de `CATEGORIES` (`Casa, Móveis & Eletros`, `Moradia & Contas Fixas`, etc.) em vez de expor os identificadores técnicos em inglês/código, tornando a planilha exportada pronta para leitura no Excel.
