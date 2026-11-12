@@ -32,6 +32,9 @@ Toda alteração ou nova funcionalidade neste repositório DEVE respeitar as seg
    * Elementos visuais que sugerem filtro ou ação — como os dias do **Calendário de Vencimentos** ou os badges de status (`Pago` / `Pendente`) — devem responder ao clique direto do usuário sem exigir múltiplos modais intermediários.
 5. **Acessibilidade & Semântica (WCAG):**
    * Todo `<input>` e `<select>` deve possuir um `id` único associado a um `<label htmlFor="...">` correspondente. Evitar atributos vazios como `max=""`.
+6. **Aprovação Prévia do Plano de Implementação (Mandatório):**
+   * Antes de executar qualquer alteração no código-fonte, criação de componentes ou refatoração, o agente **DEVE SEMPRE apresentar previamente um plano de implementação claro e estruturado** (detalhando arquivos a modificar, lógica de negócio, impactos visuais e passos técnicos).
+   * O agente deve **aguardar a confirmação e aceite explícito do usuário** antes de aplicar qualquer alteração nos arquivos do projeto.
 
 ---
 
