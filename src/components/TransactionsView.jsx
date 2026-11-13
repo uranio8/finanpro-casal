@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense, lazy } from 'react';
 import { CATEGORIES, INCOME_CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
@@ -6,14 +6,18 @@ import {
   getMonthLabel
 } from '../utils/formatters';
 
+const StatementImportModal = lazy(() => import('./StatementImportModal'));
+
 export default function TransactionsView({
   state,
   onOpenNewTransaction,
   onOpenEditTransaction,
   onClonePreviousMonthFixedExpenses,
+  onImportStatementTransactions,
   onToggleTransactionStatus,
   onDeleteTransaction
 }) {
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'pending' | 'paid' | 'income'
   const [selectedDay, setSelectedDay] = useState(null); // e.g., '2026-11-15'
   const [search, setSearch] = useState('');
@@ -157,6 +161,15 @@ export default function TransactionsView({
           </p>
         </div>
         <div className="header-btns" style={{ flexWrap: 'wrap' }}>
+          {onImportStatementTransactions && (
+            <button
+              className="btn btn-outline"
+              title="Importar fatura de cartão (.csv) ou extrato bancário (.ofx) com categorização automática"
+              onClick={() => setIsImportModalOpen(true)}
+            >
+              <i className="fa-solid fa-file-import text-emerald"></i> Importar Extrato (CSV/OFX)
+            </button>
+          )}
           {onClonePreviousMonthFixedExpenses && (
             <button
               className="btn btn-soft"
@@ -577,6 +590,17 @@ export default function TransactionsView({
             </form>
           </div>
         </div>
+      )}
+
+      {isImportModalOpen && (
+        <Suspense fallback={null}>
+          <StatementImportModal
+            cards={cards}
+            couple={couple}
+            onImportTransactions={onImportStatementTransactions}
+            onClose={() => setIsImportModalOpen(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

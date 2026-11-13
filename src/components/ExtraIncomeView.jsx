@@ -15,8 +15,11 @@ export default function ExtraIncomeView({
   onToggleExtraIncomeStatus,
   onDeleteExtraIncome,
   onUpdateWeeklyExtraFuel,
-  onSplitWeeklyExtraFuel
+  onSplitWeeklyExtraFuel,
+  onSaveStudentProfile,
+  onCarryFuelToNextMonth
 }) {
+  const [saveStudent, setSaveStudent] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'class' | 'sale' | 'service'
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'received' | 'pending'
@@ -39,7 +42,7 @@ export default function ExtraIncomeView({
     notes: ''
   });
 
-  const { extraIncomes = [], selectedMonth, couple, ownerFilter } = state;
+  const { extraIncomes = [], savedStudents = [], selectedMonth, couple, ownerFilter } = state;
   const isJointFilter = ownerFilter === 'joint';
 
   // Fechar modal ao pressionar tecla Escape (WCAG)
@@ -267,6 +270,20 @@ export default function ExtraIncomeView({
       });
     }
 
+    if (
+      saveStudent &&
+      form.type === 'class' &&
+      form.studentOrClient.trim() &&
+      onSaveStudentProfile
+    ) {
+      onSaveStudentProfile({
+        name: form.studentOrClient.trim(),
+        defaultTitle: form.title.trim(),
+        unitPrice: Number(form.unitPrice) || 90
+      });
+    }
+
+    setSaveStudent(false);
     setIsModalOpen(false);
     setEditingId(null);
   };
@@ -440,6 +457,21 @@ export default function ExtraIncomeView({
                     {w.fuelCarryOver > 0 && (
                       <div style={{ color: 'var(--primary)', fontWeight: 600 }}>
                         Excedente de {formatCurrency(w.fuelCarryOver)} abatido no total do mês
+                        {idx >= 3 && onCarryFuelToNextMonth && (
+                          <div style={{ marginTop: '4px' }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-soft"
+                              style={{ padding: '3px 8px', fontSize: '11px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onCarryFuelToNextMonth(selectedMonth, w.weekLabel, w.fuelCarryOver);
+                              }}
+                            >
+                              <i className="fa-solid fa-forward"></i> Levar {formatCurrency(w.fuelCarryOver)} p/ próximo mês
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -785,6 +817,34 @@ export default function ExtraIncomeView({
                 </div>
               </div>
 
+              {form.type === 'class' && savedStudents.length > 0 && (
+                <div className="form-group" style={{ marginBottom: '12px' }}>
+                  <label htmlFor="ext-saved-student">Preencher Rápido (Aluno Frequente)</label>
+                  <select
+                    id="ext-saved-student"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const found = savedStudents.find((s) => s.id === e.target.value);
+                      if (found) {
+                        setForm((prev) => ({
+                          ...prev,
+                          studentOrClient: found.name,
+                          title: found.defaultTitle || `Aula Particular — ${found.name}`,
+                          unitPrice: found.unitPrice || prev.unitPrice
+                        }));
+                      }
+                    }}
+                  >
+                    <option value="">Selecionar aluno salvo...</option>
+                    {savedStudents.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({formatCurrency(s.unitPrice)}/h)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="ext-title">
@@ -817,6 +877,21 @@ export default function ExtraIncomeView({
                     value={form.studentOrClient}
                     onChange={(e) => setForm({ ...form, studentOrClient: e.target.value })}
                   />
+                  {form.type === 'class' && (
+                    <label
+                      className="checkbox-inline"
+                      htmlFor="ext-save-student"
+                      style={{ marginTop: '6px', fontSize: '12px' }}
+                    >
+                      <input
+                        id="ext-save-student"
+                        type="checkbox"
+                        checked={saveStudent}
+                        onChange={(e) => setSaveStudent(e.target.checked)}
+                      />
+                      <span>Salvar aluno p/ próximas aulas</span>
+                    </label>
+                  )}
                 </div>
               </div>
 

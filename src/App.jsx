@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { INITIAL_STATE, CATEGORIES, INCOME_CATEGORIES } from './data/initialState';
 import {
   formatCurrency,
@@ -15,134 +15,25 @@ import {
   isSupabaseConfigured,
   pushStateToSupabase,
   pullStateFromSupabase,
-  checkRemoteUpdatedAt
+  checkRemoteUpdatedAt,
+  mergeCloudAndLocalState
 } from './utils/supabaseSync';
+import { loadInitialFinanceState } from './utils/stateMigration';
 import DashboardView from './components/DashboardView';
-import CommitmentsView from './components/CommitmentsView';
 import TransactionsView from './components/TransactionsView';
-import ExtraIncomeView from './components/ExtraIncomeView';
-import CardsView from './components/CardsView';
-import GoalsAndChecklistView from './components/GoalsAndChecklistView';
-import CoupleSplitView from './components/CoupleSplitView';
-import SettingsView from './components/SettingsView';
-import ReportPrintModal from './components/ReportPrintModal';
+
+const CommitmentsView = lazy(() => import('./components/CommitmentsView'));
+const ExtraIncomeView = lazy(() => import('./components/ExtraIncomeView'));
+const CardsView = lazy(() => import('./components/CardsView'));
+const GoalsAndChecklistView = lazy(() => import('./components/GoalsAndChecklistView'));
+const CoupleSplitView = lazy(() => import('./components/CoupleSplitView'));
+const SettingsView = lazy(() => import('./components/SettingsView'));
+const ReportPrintModal = lazy(() => import('./components/ReportPrintModal'));
 
 const STORAGE_KEY = 'finanpro_couple_state_v1';
 
 export default function App() {
-  const [state, setState] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Migrate old demo cards (card-1, card-2, card-3) to Inter Platinum & Nubank Chroma
-        const hasOldDemoCards =
-          Array.isArray(parsed.cards) &&
-          parsed.cards.some((c) => c.id === 'card-1' || c.id === 'card-2');
-
-        const cardsToUse = hasOldDemoCards || !Array.isArray(parsed.cards)
-          ? INITIAL_STATE.cards
-          : parsed.cards;
-
-        const mapCardId = (cid) => {
-          if (!cid) return '';
-          if (cid === 'card-2') return 'card-inter';
-          if (cid === 'card-1' || cid === 'card-3') return 'card-nubank';
-          return cid;
-        };
-
-        // If local state is version < 1.3.0, upgrade demo commitments and transactions with the complete schedules
-        const needsVersion130Upgrade = !parsed.version || parsed.version < '1.3.0';
-
-        let migratedTransactions = Array.isArray(parsed.transactions)
-          ? parsed.transactions.map((t) => ({
-              ...t,
-              cardId: mapCardId(t.cardId)
-            }))
-          : INITIAL_STATE.transactions;
-
-        let migratedCommitments = Array.isArray(parsed.commitments)
-          ? parsed.commitments.map((c) => ({
-              ...c,
-              cardId: mapCardId(c.cardId)
-            }))
-          : INITIAL_STATE.commitments;
-
-        if (needsVersion130Upgrade) {
-          // Replace demo commitments comm-1..comm-5 and merge missing demo transactions
-          const initialCommIds = new Set(INITIAL_STATE.commitments.map((c) => c.id));
-          const userCustomCommitments = migratedCommitments.filter((c) => !initialCommIds.has(c.id));
-          migratedCommitments = [...INITIAL_STATE.commitments, ...userCustomCommitments];
-
-          const userCustomTransactions = migratedTransactions.filter((t) => !t.commitmentId || !initialCommIds.has(t.commitmentId));
-          migratedTransactions = [...INITIAL_STATE.transactions, ...userCustomTransactions];
-        }
-
-        // v1.4.0 upgrade: corrigir inconsistência de salários em Nov/2026 (5900/700 -> 6500/5500)
-        let migratedMonthlyIncomes =
-          parsed.monthlyIncomes && typeof parsed.monthlyIncomes === 'object'
-            ? { ...parsed.monthlyIncomes }
-            : { ...INITIAL_STATE.monthlyIncomes };
-        const needsVersion140Upgrade = !parsed.version || parsed.version < '1.4.0';
-        if (needsVersion140Upgrade) {
-          if (
-            migratedMonthlyIncomes['2026-11']?.partner1Income === 5900 &&
-            migratedMonthlyIncomes['2026-11']?.partner2Income === 700
-          ) {
-            migratedMonthlyIncomes['2026-11'] = {
-              partner1Income: 6500,
-              partner2Income: 5500,
-              donationAmount: 0
-            };
-          }
-        }
-
-        const baseLoadedState = {
-          ...INITIAL_STATE,
-          ...parsed,
-          version: '2.0.0',
-          couple: {
-            ...INITIAL_STATE.couple,
-            ...(parsed.couple || {}),
-            partner2Name:
-              parsed.couple?.partner2Name === 'Esposa' || !parsed.couple?.partner2Name
-                ? 'Beatriz'
-                : parsed.couple.partner2Name
-          },
-          cards: cardsToUse,
-          transactions: migratedTransactions,
-          commitments: migratedCommitments,
-          monthlyIncomes: migratedMonthlyIncomes,
-          monthlySettlements: parsed.monthlySettlements || {},
-          categoryBudgets: {
-            ...INITIAL_STATE.categoryBudgets,
-            ...(parsed.categoryBudgets || {})
-          },
-          extraIncomes: Array.isArray(parsed.extraIncomes)
-            ? parsed.extraIncomes
-            : INITIAL_STATE.extraIncomes,
-          weeklyExtraFuelCosts: parsed.weeklyExtraFuelCosts || {}
-        };
-
-        return {
-          ...baseLoadedState,
-          transactions: syncMonthIncomeAndTitheTransactions(
-            baseLoadedState,
-            baseLoadedState.selectedMonth || '2026-11'
-          )
-        };
-      }
-    } catch (e) {
-      console.error('Erro ao ler localStorage:', e);
-    }
-    return {
-      ...INITIAL_STATE,
-      transactions: syncMonthIncomeAndTitheTransactions(
-        INITIAL_STATE,
-        INITIAL_STATE.selectedMonth || '2026-11'
-      )
-    };
-  });
+  const [state, setState] = useState(() => loadInitialFinanceState(STORAGE_KEY));
 
   const [activeRoute, setActiveRoute] = useState('dashboard');
   const [fabOpen, setFabOpen] = useState(false);
@@ -153,11 +44,15 @@ export default function App() {
   // Supabase Cloud Sync & PWA State
   const [supabaseConfig, setSupabaseConfig] = useState(() => getSupabaseConfig());
   const [cloudSyncStatus, setCloudSyncStatus] = useState('idle'); // 'idle' | 'syncing' | 'synced' | 'error'
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
   const [deferredPwaPrompt, setDeferredPwaPrompt] = useState(null);
   const skipNextAutoPushRef = useRef(false);
   const hasMountedRef = useRef(false);
   const lastSyncedAtRef = useRef(supabaseConfig?.lastSyncAt || null);
   const isPushPendingRef = useRef(false);
+  const hasPendingOfflineChangesRef = useRef(false);
 
   // Global Modal for New or Edited Transaction (Expense or Income)
   const [txModal, setTxModal] = useState({
@@ -257,16 +152,22 @@ export default function App() {
     }
 
     if (isSupabaseConfigured(supabaseConfig) && supabaseConfig.autoSync) {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        hasPendingOfflineChangesRef.current = true;
+        return;
+      }
       setCloudSyncStatus('syncing');
       isPushPendingRef.current = true;
       const timer = setTimeout(async () => {
         const res = await pushStateToSupabase(state, supabaseConfig);
         isPushPendingRef.current = false;
         if (res.ok) {
+          hasPendingOfflineChangesRef.current = false;
           lastSyncedAtRef.current = res.syncedAt || new Date().toISOString();
           setCloudSyncStatus('synced');
           setSupabaseConfig((prev) => ({ ...prev, lastSyncAt: res.syncedAt }));
         } else {
+          hasPendingOfflineChangesRef.current = true;
           setCloudSyncStatus('error');
         }
       }, 1400);
@@ -327,6 +228,38 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabaseConfig.url, supabaseConfig.anonKey, supabaseConfig.coupleCode, supabaseConfig.autoSync, txModal.open, isMonthIncomeModalOpen]);
+
+  // Monitor online/offline status & auto-merge/sync on reconnect
+  useEffect(() => {
+    const onOffline = () => setIsOnline(false);
+    const onOnline = async () => {
+      setIsOnline(true);
+      if (isSupabaseConfigured(supabaseConfig) && supabaseConfig.autoSync && hasPendingOfflineChangesRef.current) {
+        setCloudSyncStatus('syncing');
+        const remote = await pullStateFromSupabase(supabaseConfig);
+        const stateToPush =
+          remote.ok && remote.payload ? mergeCloudAndLocalState(state, remote.payload) : state;
+        const pushed = await pushStateToSupabase(stateToPush, supabaseConfig);
+        if (pushed.ok) {
+          hasPendingOfflineChangesRef.current = false;
+          lastSyncedAtRef.current = pushed.syncedAt || new Date().toISOString();
+          skipNextAutoPushRef.current = true;
+          setState(stateToPush);
+          setCloudSyncStatus('synced');
+          showToast('Conexão restaurada! Alterações offline sincronizadas. ☁️');
+        } else {
+          setCloudSyncStatus('error');
+        }
+      }
+    };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, supabaseConfig]);
 
   // Fechar modais ao pressionar tecla Escape (Acessibilidade WCAG)
   useEffect(() => {
@@ -401,13 +334,52 @@ export default function App() {
     return res;
   };
 
-  // Navegação de Mês na Sidebar garantindo sincronização de Salários e Primícias para qualquer mês passado ou futuro
+  // Navegação de Mês na Sidebar garantindo sincronização de Salários, Primícias e Recorrentes
   const handleNavigateMonth = (delta) => {
     setState((prev) => {
       const nextMonth = shiftYearMonth(prev.selectedMonth, delta);
+      let nextTransactions = [...(prev.transactions || [])];
+
+      // Ao avançar para um mês futuro, gera automaticamente contas fixas recorrentes ativas que ainda não existam no mês
+      if (delta > 0) {
+        const existingCommIdsInMonth = new Set(
+          nextTransactions
+            .filter((t) => t.dueDate?.startsWith(nextMonth) && t.commitmentId)
+            .map((t) => t.commitmentId)
+        );
+        const recurringComms = (prev.commitments || []).filter(
+          (c) =>
+            c.type === 'recurring' &&
+            c.active !== false &&
+            (!c.startDate || c.startDate.slice(0, 7) <= nextMonth) &&
+            !existingCommIdsInMonth.has(c.id)
+        );
+        const nowIso = new Date().toISOString();
+        recurringComms.forEach((c) => {
+          const day = c.dueDay || Number(c.startDate?.split('-')[2]) || 10;
+          nextTransactions.push({
+            id: `tx-rec-${c.id}-${nextMonth}`,
+            commitmentId: c.id,
+            title: c.title,
+            type: 'expense',
+            category: c.category || 'moradia',
+            amount: Number(c.monthlyAmount || c.totalAmount || 0),
+            dueDate: buildSafeDueDate(nextMonth, day),
+            paidDate: '',
+            status: 'pending',
+            owner: c.owner || 'joint',
+            paidBy: c.owner === 'partner2' ? 'partner2' : 'partner1',
+            paymentMethod: c.paymentMethod || 'PIX',
+            cardId: c.cardId || '',
+            updatedAt: nowIso
+          });
+        });
+      }
+
       const nextState = {
         ...prev,
-        selectedMonth: nextMonth
+        selectedMonth: nextMonth,
+        transactions: nextTransactions
       };
       return {
         ...nextState,
@@ -955,6 +927,60 @@ export default function App() {
       };
     });
     showToast(`Gasolina dividida entre ${weekLabel} e ${nextWeekLabel}! ⛽`);
+  };
+
+  const handleSaveStudentProfile = ({ name, defaultTitle, unitPrice }) => {
+    setState((prev) => {
+      const existing = prev.savedStudents || [];
+      const found = existing.find((s) => s.name.toLowerCase() === name.toLowerCase());
+      const nowIso = new Date().toISOString();
+      const nextStudents = found
+        ? existing.map((s) =>
+            s.id === found.id ? { ...s, name, defaultTitle, unitPrice, updatedAt: nowIso } : s
+          )
+        : [
+            ...existing,
+            { id: `stu-${Date.now()}`, name, defaultTitle, unitPrice, updatedAt: nowIso }
+          ];
+      return { ...prev, savedStudents: nextStudents };
+    });
+    showToast(`Aluno "${name}" salvo para lançamentos rápidos! 🎓`);
+  };
+
+  const handleCarryFuelToNextMonth = (ym, weekLabel, carryAmount) => {
+    const cleanCarry = Math.max(0, Number(carryAmount) || 0);
+    if (cleanCarry <= 0) return;
+    const nextYm = shiftYearMonth(ym, 1);
+    setState((prev) => {
+      const currFuelMap = { ...((prev.weeklyExtraFuelCosts || {})[ym] || {}) };
+      const nextFuelMap = { ...((prev.weeklyExtraFuelCosts || {})[nextYm] || {}) };
+      const currentWeekVal = Number(currFuelMap[weekLabel] || 0);
+      currFuelMap[weekLabel] = Math.max(0, Number((currentWeekVal - cleanCarry).toFixed(2)));
+      nextFuelMap['Semana 1'] = Number((Number(nextFuelMap['Semana 1'] || 0) + cleanCarry).toFixed(2));
+      const nextState = {
+        ...prev,
+        weeklyExtraFuelCosts: {
+          ...(prev.weeklyExtraFuelCosts || {}),
+          [ym]: currFuelMap,
+          [nextYm]: nextFuelMap
+        }
+      };
+      const syncedCurr = syncMonthIncomeAndTitheTransactions(nextState, ym);
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions({ ...nextState, transactions: syncedCurr }, nextYm)
+      };
+    });
+    showToast(`Saldo de ${formatCurrency(cleanCarry)} transferido para ${getMonthLabel(nextYm)}!`);
+  };
+
+  const handleImportStatementTransactions = (importedTxs) => {
+    if (!Array.isArray(importedTxs) || importedTxs.length === 0) return;
+    setState((prev) => ({
+      ...prev,
+      transactions: [...importedTxs, ...(prev.transactions || [])]
+    }));
+    showToast(`${importedTxs.length} lançamento(s) importado(s) do extrato! 📄`);
   };
 
   const handleAddCommitment = (newCommData) => {
@@ -1709,6 +1735,9 @@ export default function App() {
           monthlySettlements: {},
           extraIncomes: [],
           weeklyExtraFuelCosts: {},
+          savedStudents: [],
+          deletedIds: {},
+          clearedAt: new Date().toISOString(),
           transactions: [],
           commitments: [],
           cards: [],
@@ -1849,7 +1878,9 @@ export default function App() {
                   }`}
                 ></i>{' '}
                 <span>
-                  {cloudSyncStatus === 'syncing'
+                  {!isOnline
+                    ? 'Offline (salvo local)'
+                    : cloudSyncStatus === 'syncing'
                     ? 'Sincronizando...'
                     : cloudSyncStatus === 'error'
                     ? 'Erro Nuvem'
@@ -1892,6 +1923,13 @@ export default function App() {
         </header>
 
         {/* ROTAS / VIEWS */}
+        <Suspense
+          fallback={
+            <div className="card" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Carregando módulo...
+            </div>
+          }
+        >
         {activeRoute === 'dashboard' && (
           <DashboardView
             state={state}
@@ -1916,6 +1954,8 @@ export default function App() {
             onDeleteExtraIncome={handleDeleteExtraIncome}
             onUpdateWeeklyExtraFuel={handleUpdateWeeklyExtraFuel}
             onSplitWeeklyExtraFuel={handleSplitWeeklyExtraFuel}
+            onSaveStudentProfile={handleSaveStudentProfile}
+            onCarryFuelToNextMonth={handleCarryFuelToNextMonth}
           />
         )}
 
@@ -1938,6 +1978,7 @@ export default function App() {
             onOpenNewTransaction={handleOpenNewTransaction}
             onOpenEditTransaction={handleOpenEditTransaction}
             onClonePreviousMonthFixedExpenses={handleClonePreviousMonthFixedExpenses}
+            onImportStatementTransactions={handleImportStatementTransactions}
             onToggleTransactionStatus={handleToggleTransactionStatus}
             onDeleteTransaction={handleDeleteTransaction}
           />
@@ -1997,18 +2038,28 @@ export default function App() {
             onInstallPwa={handleInstallPwa}
           />
         )}
+        </Suspense>
       </main>
 
       {/* BOTÃO FLUTUANTE DE "AÇÕES RÁPIDAS" (FAB) */}
       <div className={`fab-container ${fabOpen ? 'open' : ''}`}>
         {fabOpen && (
           <div className="fab-menu">
-            <button onClick={() => handleOpenNewTransaction('expense', 'card-inter')}>
-              <i className="fa-solid fa-credit-card"></i> Gasto no Inter Platinum (Wesley)
-            </button>
-            <button onClick={() => handleOpenNewTransaction('expense', 'card-nubank')}>
-              <i className="fa-solid fa-credit-card"></i> Gasto no Nubank Chroma (Beatriz)
-            </button>
+            {state.cards && state.cards.length > 0 ? (
+              state.cards.slice(0, 3).map((card) => (
+                <button
+                  key={card.id}
+                  onClick={() => handleOpenNewTransaction('expense', card.id)}
+                >
+                  <i className="fa-solid fa-credit-card"></i> Gasto no {card.name} (
+                  {card.owner === 'partner2' ? state.couple.partner2Name : state.couple.partner1Name})
+                </button>
+              ))
+            ) : (
+              <button onClick={() => handleOpenNewTransaction('expense')}>
+                <i className="fa-solid fa-wallet"></i> Novo Gasto (PIX / Dinheiro)
+              </button>
+            )}
             <button
               onClick={() => {
                 setActiveRoute('extra-income');
@@ -2333,7 +2384,9 @@ export default function App() {
 
       {/* MODAL CENTRAL DE RELATÓRIOS MENSAL E ANUAL (PDF / IMPRESSÃO) */}
       {isReportModalOpen && (
-        <ReportPrintModal state={state} onClose={() => setIsReportModalOpen(false)} />
+        <Suspense fallback={null}>
+          <ReportPrintModal state={state} onClose={() => setIsReportModalOpen(false)} />
+        </Suspense>
       )}
 
       {/* MODAL: DEFINIR RENDA ESPECÍFICA DO MÊS */}

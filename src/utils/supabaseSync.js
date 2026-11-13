@@ -190,3 +190,84 @@ export async function checkRemoteUpdatedAt(customCfg) {
   }
 }
 
+function mergeArrayById(localArr = [], remoteArr = [], deletedIds = {}) {
+  const map = new Map();
+  const isDeleted = (item) => {
+    const delAt = deletedIds?.[item?.id];
+    if (!delAt) return false;
+    const itemTs = item?.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+    return new Date(delAt).getTime() >= itemTs;
+  };
+
+  (remoteArr || []).forEach((item) => {
+    if (item && item.id && !isDeleted(item)) {
+      map.set(item.id, item);
+    }
+  });
+
+  (localArr || []).forEach((item) => {
+    if (!item || !item.id || isDeleted(item)) return;
+    const existing = map.get(item.id);
+    if (!existing) {
+      map.set(item.id, item);
+    } else {
+      const localTs = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+      const remoteTs = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      if (localTs > remoteTs) {
+        map.set(item.id, item);
+      }
+    }
+  });
+
+  return Array.from(map.values());
+}
+
+export function mergeCloudAndLocalState(localState, remoteState) {
+  if (!remoteState || typeof remoteState !== 'object') return localState;
+  if (!localState || typeof localState !== 'object') return remoteState;
+
+  const localClearedTs = localState.clearedAt ? new Date(localState.clearedAt).getTime() : 0;
+  const remoteClearedTs = remoteState.clearedAt ? new Date(remoteState.clearedAt).getTime() : 0;
+
+  // Se o remoto foi zerado mais recentemente que qualquer alteração local, respeita o estado zerado remoto
+  if (remoteClearedTs > localClearedTs) {
+    return remoteState;
+  }
+
+  const mergedDeletedIds = {
+    ...(localState.deletedIds || {}),
+    ...(remoteState.deletedIds || {})
+  };
+
+  const mergedWeeklyFuel = { ...(remoteState.weeklyExtraFuelCosts || {}) };
+  Object.entries(localState.weeklyExtraFuelCosts || {}).forEach(([ym, weeks]) => {
+    mergedWeeklyFuel[ym] = { ...(mergedWeeklyFuel[ym] || {}), ...(weeks || {}) };
+  });
+
+  return {
+    ...localState,
+    ...remoteState,
+    couple: {
+      ...(localState.couple || {}),
+      ...(remoteState.couple || {})
+    },
+    monthlyIncomes: {
+      ...(localState.monthlyIncomes || {}),
+      ...(remoteState.monthlyIncomes || {})
+    },
+    monthlySettlements: {
+      ...(localState.monthlySettlements || {}),
+      ...(remoteState.monthlySettlements || {})
+    },
+    weeklyExtraFuelCosts: mergedWeeklyFuel,
+    deletedIds: mergedDeletedIds,
+    cards: mergeArrayById(localState.cards, remoteState.cards, mergedDeletedIds),
+    transactions: mergeArrayById(localState.transactions, remoteState.transactions, mergedDeletedIds),
+    commitments: mergeArrayById(localState.commitments, remoteState.commitments, mergedDeletedIds),
+    extraIncomes: mergeArrayById(localState.extraIncomes, remoteState.extraIncomes, mergedDeletedIds),
+    goals: mergeArrayById(localState.goals, remoteState.goals, mergedDeletedIds),
+    checklist: mergeArrayById(localState.checklist, remoteState.checklist, mergedDeletedIds),
+    savedStudents: mergeArrayById(localState.savedStudents, remoteState.savedStudents, mergedDeletedIds)
+  };
+}
+
