@@ -78,10 +78,10 @@ export default function App() {
         }
 
         // v1.4.0 upgrade: corrigir inconsistência de salários em Nov/2026 (5900/700 -> 6500/5500)
-        let migratedMonthlyIncomes = {
-          ...INITIAL_STATE.monthlyIncomes,
-          ...(parsed.monthlyIncomes || {})
-        };
+        let migratedMonthlyIncomes =
+          parsed.monthlyIncomes && typeof parsed.monthlyIncomes === 'object'
+            ? { ...parsed.monthlyIncomes }
+            : { ...INITIAL_STATE.monthlyIncomes };
         const needsVersion140Upgrade = !parsed.version || parsed.version < '1.4.0';
         if (needsVersion140Upgrade) {
           if (
@@ -154,6 +154,7 @@ export default function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState('idle'); // 'idle' | 'syncing' | 'synced' | 'error'
   const [deferredPwaPrompt, setDeferredPwaPrompt] = useState(null);
   const skipNextAutoPushRef = useRef(false);
+  const hasMountedRef = useRef(false);
 
   // Global Modal for New or Edited Transaction (Expense or Income)
   const [txModal, setTxModal] = useState({
@@ -207,6 +208,31 @@ export default function App() {
     setDeferredPwaPrompt(null);
   };
 
+  // Auto-pull from Supabase on startup when configured & autoSync is enabled
+  useEffect(() => {
+    if (!isSupabaseConfigured(supabaseConfig) || !supabaseConfig.autoSync) return;
+    let cancelled = false;
+    (async () => {
+      setCloudSyncStatus('syncing');
+      const res = await pullStateFromSupabase(supabaseConfig);
+      if (cancelled) return;
+      if (res.ok && res.payload) {
+        skipNextAutoPushRef.current = true;
+        handleImportBackup(res.payload, { silentToast: true });
+        setCloudSyncStatus('synced');
+        setSupabaseConfig(getSupabaseConfig());
+      } else if (res.ok && res.empty) {
+        setCloudSyncStatus('idle');
+      } else {
+        setCloudSyncStatus('error');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Sync to localStorage, apply theme class & optional auto-sync to Supabase
   useEffect(() => {
     try {
@@ -215,6 +241,11 @@ export default function App() {
       console.error('Erro ao salvar localStorage:', e);
     }
     document.body.className = state.couple?.theme || 'theme-emerald';
+
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
 
     if (skipNextAutoPushRef.current) {
       skipNextAutoPushRef.current = false;
@@ -293,7 +324,7 @@ export default function App() {
     const res = await pullStateFromSupabase(cfgToUse);
     if (res.ok && res.payload) {
       skipNextAutoPushRef.current = true;
-      handleImportBackup(res.payload);
+      handleImportBackup(res.payload, { silentToast: true });
       setCloudSyncStatus('synced');
       setSupabaseConfig(getSupabaseConfig());
       showToast('Dados atualizados a partir da nuvem! 📲☁️');
@@ -1523,7 +1554,7 @@ export default function App() {
     showToast('Backup JSON exportado com sucesso!');
   };
 
-  const handleImportBackup = (parsedState) => {
+  const handleImportBackup = (parsedState, options = {}) => {
     try {
       if (!parsedState || typeof parsedState !== 'object') {
         alert('Arquivo de backup inválido.');
@@ -1537,7 +1568,7 @@ export default function App() {
         return cid;
       };
 
-      const sanitizedCards = Array.isArray(parsedState.cards) && parsedState.cards.length > 0
+      const sanitizedCards = Array.isArray(parsedState.cards)
         ? parsedState.cards
         : INITIAL_STATE.cards;
 
@@ -1569,7 +1600,9 @@ export default function App() {
           importedBase.selectedMonth || '2026-11'
         )
       });
-      showToast('Backup JSON restaurado com sucesso! ✨');
+      if (!options.silentToast) {
+        showToast('Backup JSON restaurado com sucesso! ✨');
+      }
     } catch (err) {
       console.error('Erro na importação de backup:', err);
       alert('Falha ao processar arquivo de backup.');
