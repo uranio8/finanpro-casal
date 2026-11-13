@@ -14,7 +14,8 @@ import {
   saveSupabaseConfig,
   isSupabaseConfigured,
   pushStateToSupabase,
-  pullStateFromSupabase
+  pullStateFromSupabase,
+  checkRemoteUpdatedAt
 } from './utils/supabaseSync';
 import DashboardView from './components/DashboardView';
 import CommitmentsView from './components/CommitmentsView';
@@ -155,6 +156,8 @@ export default function App() {
   const [deferredPwaPrompt, setDeferredPwaPrompt] = useState(null);
   const skipNextAutoPushRef = useRef(false);
   const hasMountedRef = useRef(false);
+  const lastSyncedAtRef = useRef(supabaseConfig?.lastSyncAt || null);
+  const isPushPendingRef = useRef(false);
 
   // Global Modal for New or Edited Transaction (Expense or Income)
   const [txModal, setTxModal] = useState({
@@ -218,6 +221,7 @@ export default function App() {
       if (cancelled) return;
       if (res.ok && res.payload) {
         skipNextAutoPushRef.current = true;
+        lastSyncedAtRef.current = res.updatedAt || new Date().toISOString();
         handleImportBackup(res.payload, { silentToast: true });
         setCloudSyncStatus('synced');
         setSupabaseConfig(getSupabaseConfig());
@@ -254,18 +258,75 @@ export default function App() {
 
     if (isSupabaseConfigured(supabaseConfig) && supabaseConfig.autoSync) {
       setCloudSyncStatus('syncing');
+      isPushPendingRef.current = true;
       const timer = setTimeout(async () => {
         const res = await pushStateToSupabase(state, supabaseConfig);
+        isPushPendingRef.current = false;
         if (res.ok) {
+          lastSyncedAtRef.current = res.syncedAt || new Date().toISOString();
           setCloudSyncStatus('synced');
           setSupabaseConfig((prev) => ({ ...prev, lastSyncAt: res.syncedAt }));
         } else {
           setCloudSyncStatus('error');
         }
       }, 1400);
-      return () => clearTimeout(timer);
+      return () => {
+        isPushPendingRef.current = false;
+        clearTimeout(timer);
+      };
     }
   }, [state]);
+
+  // Real-time background pull (on tab focus/visibility + every 8s when visible & idle)
+  useEffect(() => {
+    if (!isSupabaseConfigured(supabaseConfig) || !supabaseConfig.autoSync) return;
+    let checking = false;
+
+    const checkAndPullIfNewer = async () => {
+      if (checking || isPushPendingRef.current) return;
+      if (document.visibilityState === 'hidden') return;
+      if (txModal.open || isMonthIncomeModalOpen) return;
+
+      checking = true;
+      try {
+        const meta = await checkRemoteUpdatedAt(supabaseConfig);
+        if (!meta.ok || meta.empty || !meta.updatedAt) return;
+
+        const remoteMs = new Date(meta.updatedAt).getTime();
+        const localMs = lastSyncedAtRef.current ? new Date(lastSyncedAtRef.current).getTime() : 0;
+        if (remoteMs > localMs) {
+          setCloudSyncStatus('syncing');
+          const res = await pullStateFromSupabase(supabaseConfig);
+          if (res.ok && res.payload && !isPushPendingRef.current) {
+            skipNextAutoPushRef.current = true;
+            lastSyncedAtRef.current = res.updatedAt || meta.updatedAt;
+            handleImportBackup(res.payload, { silentToast: true });
+            setCloudSyncStatus('synced');
+            setSupabaseConfig(getSupabaseConfig());
+          }
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        checkAndPullIfNewer();
+      }
+    };
+
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    const intervalId = setInterval(checkAndPullIfNewer, 8000);
+
+    return () => {
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabaseConfig.url, supabaseConfig.anonKey, supabaseConfig.coupleCode, supabaseConfig.autoSync, txModal.open, isMonthIncomeModalOpen]);
 
   // Fechar modais ao pressionar tecla Escape (Acessibilidade WCAG)
   useEffect(() => {
@@ -304,6 +365,7 @@ export default function App() {
     setCloudSyncStatus('syncing');
     const res = await pushStateToSupabase(state, cfgToUse);
     if (res.ok) {
+      lastSyncedAtRef.current = res.syncedAt || new Date().toISOString();
       setCloudSyncStatus('synced');
       setSupabaseConfig(getSupabaseConfig());
       showToast('Dados sincronizados na nuvem com sucesso! ☁️✨');
@@ -324,6 +386,7 @@ export default function App() {
     const res = await pullStateFromSupabase(cfgToUse);
     if (res.ok && res.payload) {
       skipNextAutoPushRef.current = true;
+      lastSyncedAtRef.current = res.updatedAt || new Date().toISOString();
       handleImportBackup(res.payload, { silentToast: true });
       setCloudSyncStatus('synced');
       setSupabaseConfig(getSupabaseConfig());

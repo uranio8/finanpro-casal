@@ -155,3 +155,38 @@ export async function pullStateFromSupabase(customCfg) {
   }
 }
 
+export async function checkRemoteUpdatedAt(customCfg) {
+  const cfg = customCfg || getSupabaseConfig();
+  if (!isSupabaseConfigured(cfg)) {
+    return { ok: false, reason: 'not_configured' };
+  }
+
+  const endpoint = `${cfg.url.replace(
+    /\/+$/,
+    ''
+  )}/rest/v1/couple_sync?couple_code=eq.${encodeURIComponent(
+    cfg.coupleCode
+  )}&select=updated_at&limit=1`;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        apikey: cfg.anonKey,
+        Authorization: `Bearer ${cfg.anonKey}`,
+        Accept: 'application/json'
+      }
+    });
+    if (!res.ok) {
+      return { ok: false, status: res.status };
+    }
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { ok: true, empty: true };
+    }
+    return { ok: true, updatedAt: rows[0].updated_at || null };
+  } catch (err) {
+    return { ok: false, error: err?.message || 'Erro de rede' };
+  }
+}
+
