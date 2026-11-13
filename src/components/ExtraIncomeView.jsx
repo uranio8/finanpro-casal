@@ -14,7 +14,8 @@ export default function ExtraIncomeView({
   onUpdateExtraIncome,
   onToggleExtraIncomeStatus,
   onDeleteExtraIncome,
-  onUpdateWeeklyExtraFuel
+  onUpdateWeeklyExtraFuel,
+  onSplitWeeklyExtraFuel
 }) {
   const [selectedWeek, setSelectedWeek] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'class' | 'sale' | 'service'
@@ -201,6 +202,7 @@ export default function ExtraIncomeView({
         count: w.count,
         gross: w.gross,
         weeklyFuel: w.weeklyFuel,
+        fuelCarryOver: w.fuelCarryOver,
         total: w.net,
         received: w.receivedNet,
         pending: w.pendingNet,
@@ -435,6 +437,11 @@ export default function ExtraIncomeView({
                 {w.weeklyFuel > 0 && (
                   <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginBottom: '4px' }}>
                     Bruto: {formatCurrency(w.gross)} − Gasolina: {formatCurrency(w.weeklyFuel)}
+                    {w.fuelCarryOver > 0 && (
+                      <div style={{ color: 'var(--primary)', fontWeight: 600 }}>
+                        Excedente de {formatCurrency(w.fuelCarryOver)} abatido no total do mês
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="week-card-sub">
@@ -479,27 +486,43 @@ export default function ExtraIncomeView({
                     >
                       <i className="fa-solid fa-gas-pump"></i> Gasolina da semana (R$)
                     </label>
-                    <input
-                      id={fuelInputId}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0,00"
-                      value={w.weeklyFuel || ''}
-                      onChange={(e) =>
-                        onUpdateWeeklyExtraFuel &&
-                        onUpdateWeeklyExtraFuel(selectedMonth, w.weekLabel, e.target.value)
-                      }
-                      style={{
-                        width: '100%',
-                        padding: '6px 8px',
-                        fontSize: '12.5px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-card)',
-                        color: 'var(--text-main)'
-                      }}
-                    />
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <input
+                        id={fuelInputId}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0,00"
+                        value={w.weeklyFuel || ''}
+                        onChange={(e) =>
+                          onUpdateWeeklyExtraFuel &&
+                          onUpdateWeeklyExtraFuel(selectedMonth, w.weekLabel, e.target.value)
+                        }
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          padding: '6px 8px',
+                          fontSize: '12.5px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-card)',
+                          color: 'var(--text-main)'
+                        }}
+                      />
+                      {idx < WEEKS.length - 1 && w.weeklyFuel > 0 && onSplitWeeklyExtraFuel && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-soft"
+                          title={`Dividir igualmente entre ${w.weekLabel} e ${WEEKS[idx + 1]}`}
+                          onClick={() =>
+                            onSplitWeeklyExtraFuel(selectedMonth, w.weekLabel, WEEKS[idx + 1])
+                          }
+                          style={{ padding: '6px 8px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                        >
+                          ÷ 2 sem.
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

@@ -834,6 +834,35 @@ export default function App() {
     });
   };
 
+  const handleSplitWeeklyExtraFuel = (ym, weekLabel, nextWeekLabel) => {
+    setState((prev) => {
+      const targetYm = ym || prev.selectedMonth;
+      const currentMap = (prev.weeklyExtraFuelCosts || {})[targetYm] || {};
+      const currentVal = Math.max(0, Number(currentMap[weekLabel] || 0));
+      if (currentVal <= 0 || !nextWeekLabel) return prev;
+      const totalCents = Math.round(currentVal * 100);
+      const firstHalf = Math.ceil(totalCents / 2) / 100;
+      const secondHalf = Math.floor(totalCents / 2) / 100;
+      const nextWeeklyFuel = {
+        ...(prev.weeklyExtraFuelCosts || {}),
+        [targetYm]: {
+          ...currentMap,
+          [weekLabel]: firstHalf,
+          [nextWeekLabel]: Number((Number(currentMap[nextWeekLabel] || 0) + secondHalf).toFixed(2))
+        }
+      };
+      const nextState = {
+        ...prev,
+        weeklyExtraFuelCosts: nextWeeklyFuel
+      };
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, targetYm)
+      };
+    });
+    showToast(`Gasolina dividida entre ${weekLabel} e ${nextWeekLabel}! ⛽`);
+  };
+
   const handleAddCommitment = (newCommData) => {
     const commId = `comm-${Date.now()}`;
     const { generatedInstallments, ...commRecord } = newCommData;
@@ -1790,6 +1819,7 @@ export default function App() {
             onToggleExtraIncomeStatus={handleToggleExtraIncomeStatus}
             onDeleteExtraIncome={handleDeleteExtraIncome}
             onUpdateWeeklyExtraFuel={handleUpdateWeeklyExtraFuel}
+            onSplitWeeklyExtraFuel={handleSplitWeeklyExtraFuel}
           />
         )}
 

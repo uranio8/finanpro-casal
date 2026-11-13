@@ -161,21 +161,21 @@ export function getMonthlyExtraNetSummary(state, ym, ownerFilter = 'all') {
     const targetOwner = !hasP1 && hasP2 ? 'partner2' : 'partner1';
     if (targetOwner === 'partner1') {
       p1WeeklyFuel += appliedFuel;
-      p1ReceivedFuel += Math.min(appliedFuel, weekReceivedGross);
     } else {
       p2WeeklyFuel += appliedFuel;
-      p2ReceivedFuel += Math.min(appliedFuel, weekReceivedGross);
     }
 
     const weekNet = Math.max(0, Number((weekGross - appliedFuel).toFixed(2)));
     const weekReceivedNet = Math.max(0, Number((weekReceivedGross - appliedFuel).toFixed(2)));
     const weekPendingNet = Math.max(0, Number((weekNet - weekReceivedNet).toFixed(2)));
+    const fuelCarryOver = Math.max(0, Number((appliedFuel - weekGross).toFixed(2)));
 
     byWeek[weekLabel] = {
       weekLabel,
       count: weekItems.length,
       gross: Number(weekGross.toFixed(2)),
       weeklyFuel: Number(appliedFuel.toFixed(2)),
+      fuelCarryOver,
       net: weekNet,
       receivedGross: Number(weekReceivedGross.toFixed(2)),
       receivedNet: weekReceivedNet,
@@ -201,12 +201,13 @@ export function getMonthlyExtraNetSummary(state, ym, ownerFilter = 'all') {
     (i) => i.owner === 'partner2' && i.status === 'received' && i.applyTitheAndOffering !== false
   );
 
+  // Desconta o total de gasolina do mês inteiro (para que abastecimentos que duram 2 semanas não percam excedente)
   const p1Net = Math.max(0, Number((p1Gross - p1WeeklyFuel).toFixed(2)));
   const p2Net = Math.max(0, Number((p2Gross - p2WeeklyFuel).toFixed(2)));
-  const p1ReceivedNet = Math.max(0, Number((p1ReceivedGross - p1ReceivedFuel).toFixed(2)));
-  const p2ReceivedNet = Math.max(0, Number((p2ReceivedGross - p2ReceivedFuel).toFixed(2)));
-  const p1TitheableNet = Math.max(0, Number((p1TitheableGross - p1ReceivedFuel).toFixed(2)));
-  const p2TitheableNet = Math.max(0, Number((p2TitheableGross - p2ReceivedFuel).toFixed(2)));
+  const p1ReceivedNet = Math.max(0, Number((p1ReceivedGross - p1WeeklyFuel).toFixed(2)));
+  const p2ReceivedNet = Math.max(0, Number((p2ReceivedGross - p2WeeklyFuel).toFixed(2)));
+  const p1TitheableNet = Math.max(0, Number((p1TitheableGross - p1WeeklyFuel).toFixed(2)));
+  const p2TitheableNet = Math.max(0, Number((p2TitheableGross - p2WeeklyFuel).toFixed(2)));
 
   const totalGross = Number((p1Gross + p2Gross).toFixed(2));
   const totalNet = Number((p1Net + p2Net).toFixed(2));
