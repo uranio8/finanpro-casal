@@ -417,6 +417,7 @@ export default function App() {
       alreadyFundedInCdi: false,
       fundedMonth: cardCalc.purchaseYm,
       installmentMode: 'single',
+      installmentValueMode: 'monthly',
       installmentsCount: 2,
       propagateToPendingInstallments: false
     });
@@ -607,6 +608,7 @@ export default function App() {
     const {
       propagateToPendingInstallments,
       installmentMode,
+      installmentValueMode,
       installmentsCount,
       ...cleanForm
     } = txForm;
@@ -619,7 +621,11 @@ export default function App() {
       parsedCount > 1
     ) {
       const commId = `comm-${Date.now()}`;
-      const schedule = generateInstallmentSchedule(amountNum, parsedCount, txForm.dueDate);
+      const effectiveTotalAmount =
+        installmentValueMode === 'monthly'
+          ? Number((amountNum * parsedCount).toFixed(2))
+          : amountNum;
+      const schedule = generateInstallmentSchedule(effectiveTotalAmount, parsedCount, txForm.dueDate);
       const endDate = schedule[schedule.length - 1]?.dueDate || txForm.dueDate;
       const nowIso = new Date().toISOString();
       const newCommitment = {
@@ -627,7 +633,7 @@ export default function App() {
         title: txForm.title.trim(),
         type: 'installment',
         category: txForm.category,
-        totalAmount: amountNum,
+        totalAmount: effectiveTotalAmount,
         downPayment: 0,
         installmentsCount: parsedCount,
         monthlyAmount: schedule[0]?.amount || amountNum,
@@ -2322,7 +2328,11 @@ export default function App() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label htmlFor="tx-amount">
-                    {txForm.installmentMode === 'installment' ? 'Valor Total da Compra (R$) *' : 'Valor (R$) *'}
+                    {txForm.installmentMode === 'installment'
+                      ? txForm.installmentValueMode === 'monthly'
+                        ? 'Valor Mensal da Parcela (R$) *'
+                        : 'Valor Total da Compra (R$) *'
+                      : 'Valor (R$) *'}
                   </label>
                   <CurrencyInput
                     id="tx-amount"
@@ -2428,9 +2438,35 @@ export default function App() {
                         </div>
 
                         {txForm.installmentMode === 'installment' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                type="button"
+                                className={`btn btn-sm ${
+                                  txForm.installmentValueMode === 'monthly' ? 'btn-soft' : 'btn-outline'
+                                }`}
+                                style={{ padding: '4px 8px', fontSize: '11.5px' }}
+                                onClick={() =>
+                                  setTxForm((prev) => ({ ...prev, installmentValueMode: 'monthly' }))
+                                }
+                              >
+                                Valor Mensal
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn-sm ${
+                                  txForm.installmentValueMode !== 'monthly' ? 'btn-soft' : 'btn-outline'
+                                }`}
+                                style={{ padding: '4px 8px', fontSize: '11.5px' }}
+                                onClick={() =>
+                                  setTxForm((prev) => ({ ...prev, installmentValueMode: 'total' }))
+                                }
+                              >
+                                Valor Total
+                              </button>
+                            </div>
                             <label htmlFor="tx-inst-count" style={{ fontSize: '12px', margin: 0, fontWeight: 600 }}>
-                              Parcelas:
+                              Meses:
                             </label>
                             <select
                               id="tx-inst-count"
@@ -2456,16 +2492,22 @@ export default function App() {
                       {txForm.installmentMode === 'installment' && Number(txForm.amount) > 0 && (
                         <div style={{ fontSize: '12px', color: 'var(--primary)', marginTop: '6px', fontWeight: 600 }}>
                           {(() => {
+                            const count = txForm.installmentsCount || 2;
+                            const totalCalc =
+                              txForm.installmentValueMode === 'monthly'
+                                ? Number((Number(txForm.amount) * count).toFixed(2))
+                                : Number(txForm.amount);
                             const sched = generateInstallmentSchedule(
-                              Number(txForm.amount),
-                              txForm.installmentsCount || 2,
+                              totalCalc,
+                              count,
                               txForm.dueDate
                             );
                             const lastDue = sched[sched.length - 1]?.dueDate;
                             return (
                               <>
                                 <i className="fa-solid fa-calendar-check"></i>{' '}
-                                {sched.length}x de {formatCurrency(sched[0]?.amount)} · Automatizado até{' '}
+                                {sched.length}x de {formatCurrency(sched[0]?.amount)} (Total:{' '}
+                                {formatCurrency(totalCalc)}) · Automatizado até{' '}
                                 {getMonthLabel((lastDue || '').slice(0, 7))}
                               </>
                             );

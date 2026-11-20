@@ -199,17 +199,20 @@ export default function CommitmentsView({
   const installmentPreview = useMemo(() => {
     const rawVal = Number(form.totalAmount) || 0;
     const isRecurring = form.type === 'recurring';
+    const isMonthlyInput = isRecurring || form.valueMode === 'monthly';
     const effectiveDownPayment = (!isRecurring && form.hasDownPayment) ? Number(form.downPayment) || 0 : 0;
     const count = Math.max(1, parseInt(form.installmentsCount, 10) || 1);
 
     if (rawVal <= 0) return { list: [], endDate: form.startDate, valid: false, totalCalculated: 0 };
 
-    // For recurring accounts, rawVal is the monthly fee! Total is monthlyFee * count.
-    // For installment purchases, rawVal is the total purchase value!
-    const totalContract = isRecurring ? Number((rawVal * count).toFixed(2)) : rawVal;
+    const totalContract = isMonthlyInput
+      ? Number((rawVal * count + effectiveDownPayment).toFixed(2))
+      : rawVal;
 
     const remainingToParcel = Math.max(0, totalContract - effectiveDownPayment);
-    const baseInstallment = isRecurring ? rawVal : Math.floor((remainingToParcel / count) * 100) / 100;
+    const baseInstallment = isMonthlyInput
+      ? rawVal
+      : Math.floor((remainingToParcel / count) * 100) / 100;
     const list = [];
 
     const hasValidDown = !isRecurring && form.hasDownPayment && effectiveDownPayment > 0;
@@ -1016,21 +1019,45 @@ export default function CommitmentsView({
 
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label htmlFor="comm-total">
-                    {form.type === 'recurring'
-                      ? 'Valor Mensal da Conta Fixa (R$) *'
-                      : 'Valor Total da Compra / Compromisso (R$) *'}
-                  </label>
+                  <div className="flex-between" style={{ marginBottom: '4px' }}>
+                    <label htmlFor="comm-total" style={{ margin: 0 }}>
+                      {form.type === 'recurring'
+                        ? 'Valor Mensal da Conta Fixa (R$) *'
+                        : form.valueMode === 'monthly'
+                        ? 'Valor Mensal da Parcela (R$) *'
+                        : 'Valor Total da Compra (R$) *'}
+                    </label>
+                    {form.type !== 'recurring' && (
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${form.valueMode === 'monthly' ? 'btn-soft' : 'btn-outline'}`}
+                          style={{ padding: '2px 7px', fontSize: '11px' }}
+                          onClick={() => setForm({ ...form, valueMode: 'monthly' })}
+                        >
+                          Valor Mensal
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${form.valueMode !== 'monthly' ? 'btn-soft' : 'btn-outline'}`}
+                          style={{ padding: '2px 7px', fontSize: '11px' }}
+                          onClick={() => setForm({ ...form, valueMode: 'total' })}
+                        >
+                          Valor Total
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <CurrencyInput
                     id="comm-total"
                     required
-                    placeholder={form.type === 'recurring' ? '200,00' : '2.400,00'}
+                    placeholder={form.type === 'recurring' || form.valueMode === 'monthly' ? '30,00' : '2.400,00'}
                     value={form.totalAmount}
                     onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
                   />
-                  {form.type === 'recurring' && Number(form.totalAmount) > 0 && (
+                  {(form.type === 'recurring' || form.valueMode === 'monthly') && Number(form.totalAmount) > 0 && (
                     <small style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '2px', display: 'block' }}>
-                      Total projetado: {formatCurrency(Number(form.totalAmount) * (parseInt(form.installmentsCount, 10) || 1))} em {form.installmentsCount} meses.
+                      Total calculado: {formatCurrency(installmentPreview.totalCalculated)} em {form.installmentsCount} meses.
                     </small>
                   )}
                 </div>
