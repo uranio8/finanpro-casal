@@ -1,10 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSafeDueDate,
+  computeCardInvoiceDueDate,
   getMonthlyExtraNetSummary,
   getMonthlyCdiReserveSummary,
   syncMonthIncomeAndTitheTransactions
 } from './formatters';
+
+describe('computeCardInvoiceDueDate', () => {
+  it('keeps invoice in same month before closing day and shifts to next month on/after closing day', () => {
+    const card = { closingDay: 8, dueDay: 15 };
+    const before = computeCardInvoiceDueDate('2026-11-05', card);
+    expect(before.isAfterClosing).toBe(false);
+    expect(before.dueDate).toBe('2026-11-15');
+    expect(before.invoiceYm).toBe('2026-11');
+
+    const after = computeCardInvoiceDueDate('2026-11-12', card);
+    expect(after.isAfterClosing).toBe(true);
+    expect(after.dueDate).toBe('2026-12-15');
+    expect(after.invoiceYm).toBe('2026-12');
+    expect(after.purchaseYm).toBe('2026-11');
+  });
+});
 
 describe('getMonthlyCdiReserveSummary', () => {
   it('deducts CDI reserve in purchase month and covers invoice month without going negative', () => {

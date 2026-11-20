@@ -96,6 +96,30 @@ export function buildSafeDueDate(yearMonth, day = 15) {
   return `${yearMonth}-${String(safeDay).padStart(2, '0')}`;
 }
 
+export function computeCardInvoiceDueDate(purchaseDateStr, card) {
+  const closingDay = Number(card?.closingDay) || 10;
+  const dueDay = Number(card?.dueDay) || 15;
+  if (!purchaseDateStr || !purchaseDateStr.includes('-')) {
+    return {
+      dueDate: buildSafeDueDate('2026-11', dueDay),
+      invoiceYm: '2026-11',
+      purchaseYm: '2026-11',
+      isAfterClosing: false
+    };
+  }
+  const parts = purchaseDateStr.split('-');
+  const ym = `${parts[0]}-${parts[1]}`;
+  const purchaseDay = parseInt(parts[2], 10) || 1;
+  const isAfterClosing = purchaseDay >= closingDay;
+  const targetYm = isAfterClosing ? addMonthsToDate(`${ym}-01`, 1).slice(0, 7) : ym;
+  return {
+    dueDate: buildSafeDueDate(targetYm, dueDay),
+    invoiceYm: targetYm,
+    purchaseYm: ym,
+    isAfterClosing
+  };
+}
+
 export function isAutoSalaryTransaction(tx) {
   if (!tx || tx.type !== 'income') return false;
   if (

@@ -6,6 +6,7 @@ import {
   shiftYearMonth,
   getEffectiveMonthIncome,
   buildSafeDueDate,
+  computeCardInvoiceDueDate,
   isAutoSalaryTransaction,
   syncMonthIncomeAndTitheTransactions
 } from './utils/formatters';
@@ -395,22 +396,23 @@ export default function App() {
       { id: 'card-inter', dueDay: 15, owner: 'partner1' };
 
     const isExpense = type === 'expense';
+    const defaultPurchaseDate = `${state.selectedMonth}-05`;
+    const cardCalc = computeCardInvoiceDueDate(defaultPurchaseDate, chosenCard);
 
     setTxForm({
       title: '',
       type,
       category: type === 'income' ? 'extra' : 'mercado',
       amount: '',
-      dueDate: isExpense
-        ? buildSafeDueDate(state.selectedMonth, chosenCard.dueDay || 15)
-        : `${state.selectedMonth}-05`,
+      purchaseDate: defaultPurchaseDate,
+      dueDate: isExpense ? cardCalc.dueDate : `${state.selectedMonth}-05`,
       status: type === 'income' ? 'paid' : 'pending',
       owner: type === 'income' ? 'partner1' : 'joint',
       paidBy: chosenCard.owner === 'partner2' ? 'partner2' : 'partner1',
       paymentMethod: isExpense ? 'Cartão de Crédito' : 'PIX',
       cardId: isExpense ? chosenCard.id : '',
       alreadyFundedInCdi: false,
-      fundedMonth: shiftYearMonth(state.selectedMonth, -1),
+      fundedMonth: cardCalc.purchaseYm,
       propagateToPendingInstallments: false
     });
     setTxModal({ open: true, type, editingId: null, commitmentId: null });
@@ -424,6 +426,7 @@ export default function App() {
       type: tx.type || 'expense',
       category: tx.category || (tx.type === 'income' ? 'extra' : 'outros'),
       amount: tx.amount ?? '',
+      purchaseDate: tx.purchaseDate || tx.dueDate || `${state.selectedMonth}-05`,
       dueDate: tx.dueDate || `${state.selectedMonth}-10`,
       status: tx.status || 'pending',
       owner: tx.owner || 'joint',
@@ -450,14 +453,17 @@ export default function App() {
       setTxForm((prev) => ({ ...prev, cardId: newCardId }));
       return;
     }
-    const ym = txForm.dueDate ? txForm.dueDate.slice(0, 7) : state.selectedMonth;
-    const newDueDate = buildSafeDueDate(ym, chosen.dueDay || 15);
-    setTxForm((prev) => ({
-      ...prev,
-      cardId: newCardId,
-      dueDate: newDueDate,
-      paidBy: chosen.owner === 'partner2' ? 'partner2' : 'partner1'
-    }));
+    setTxForm((prev) => {
+      const pDate = prev.purchaseDate || prev.dueDate || `${state.selectedMonth}-05`;
+      const calc = computeCardInvoiceDueDate(pDate, chosen);
+      return {
+        ...prev,
+        cardId: newCardId,
+        dueDate: calc.dueDate,
+        fundedMonth: prev.alreadyFundedInCdi ? calc.purchaseYm : prev.fundedMonth,
+        paidBy: chosen.owner === 'partner2' ? 'partner2' : 'partner1'
+      };
+    });
   };
 
   const handleSaveTransaction = (e) => {
@@ -2231,8 +2237,8 @@ export default function App() {
                 />
               </div>
 
-              {/* VALOR E VENCIMENTO */}
-              <div className="form-grid-2">
+              {/* VALOR E DATAS (COMPRA + VENCIMENTO AUTOMÁTICO NO CARTÃO) */}
+              <div className={txForm.type === 'expense' && txForm.paymentMethod === 'Cartão de Crédito' ? 'form-grid-3' : 'form-grid-2'}>
                 <div className="form-group">
                   <label htmlFor="tx-amount">Valor (R$) *</label>
                   <input
@@ -2246,10 +2252,33 @@ export default function App() {
                     onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
                   />
                 </div>
+                {txForm.type === 'expense' && txForm.paymentMethod === 'Cartão de Crédito' && (
+                  <div className="form-group">
+                    <label htmlFor="tx-purchase-date">Data da Compra *</label>
+                    <input
+                      id="tx-purchase-date"
+                      type="date"
+                      required
+                      value={txForm.purchaseDate || txForm.dueDate}
+                      onChange={(e) => {
+                        const newPurchaseDate = e.target.value;
+                        const chosen =
+                          state.cards.find((c) => c.id === txForm.cardId) || state.cards[0];
+                        const calc = computeCardInvoiceDueDate(newPurchaseDate, chosen);
+                        setTxForm((prev) => ({
+                          ...prev,
+                          purchaseDate: newPurchaseDate,
+                          dueDate: calc.dueDate,
+                          fundedMonth: calc.purchaseYm
+                        }));
+                      }}
+                    />
+                  </div>
+                )}
                 <div className="form-group">
                   <label htmlFor="tx-date">
                     {txForm.paymentMethod === 'Cartão de Crédito'
-                      ? 'Vencimento da Fatura *'
+                      ? 'Vencimento da Fatura (Automático) *'
                       : 'Data de Vencimento *'}
                   </label>
                   <input
@@ -2261,6 +2290,32 @@ export default function App() {
                   />
                 </div>
               </div>
+              {txForm.type === 'expense' &&
+                txForm.paymentMethod === 'Cartão de Crédito' &&
+                selectedCardInModal &&
+                (() => {
+                  const calc = computeCardInvoiceDueDate(
+                    txForm.purchaseDate || txForm.dueDate,
+                    selectedCardInModal
+                  );
+                  return calc.isAfterClosing ? (
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: 'var(--primary)',
+                        background: 'var(--primary-soft)',
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        marginBottom: '10px',
+                        fontWeight: 600
+                      }}
+                    >
+                      <i className="fa-solid fa-calendar-plus"></i> Compra após o fechamento (dia{' '}
+                      {selectedCardInModal.closingDay}) → contabilizada automaticamente na fatura de{' '}
+                      <strong>{getMonthLabel(calc.invoiceYm)}</strong>!
+                    </div>
+                  ) : null;
+                })()}
 
               {/* FORMA DE PAGAMENTO E CARTÃO (SEM BOXES APERTADAS) */}
               {txForm.type === 'expense' && (
