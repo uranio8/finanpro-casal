@@ -9,7 +9,6 @@ import {
   BarElement
 } from 'chart.js';
 import { Doughnut, Bar } from 'react-chartjs-2';
-import { CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
   formatShortDateBR,
@@ -18,6 +17,7 @@ import {
   getEffectiveMonthIncome,
   getMonthlyExtraNetSummary,
   getMonthlyCdiReserveSummary,
+  getCategories,
   isAutoSalaryTransaction,
   isAutoTitheOrDonationTransaction
 } from '../utils/formatters';
@@ -44,6 +44,7 @@ export default function DashboardView({
     transactions,
     extraIncomes = []
   } = state;
+  const CATEGORIES = getCategories(state);
 
   // Sincronizar ano do gráfico de Fluxo de Caixa ao navegar entre anos na Sidebar
   useEffect(() => {

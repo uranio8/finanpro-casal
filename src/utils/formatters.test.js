@@ -193,5 +193,44 @@ describe('syncMonthIncomeAndTitheTransactions', () => {
     const txs = syncMonthIncomeAndTitheTransactions(state, '2026-11');
     expect(txs).toHaveLength(0);
   });
+
+  it('auto-materializes indefinite recurring expenses (e.g. health plan) in any future month', () => {
+    const state = {
+      selectedMonth: '2028-05',
+      couple: {
+        partner1Name: 'Wesley',
+        partner2Name: 'Beatriz',
+        partner1Income: 0,
+        partner2Income: 0,
+        titheEnabled: false
+      },
+      commitments: [
+        {
+          id: 'comm-health',
+          title: 'Plano de Saúde Unimed',
+          type: 'recurring',
+          isIndefinite: true,
+          active: true,
+          category: 'saude',
+          monthlyAmount: 450,
+          totalAmount: 450,
+          startDate: '2026-11-10',
+          dueDay: 10,
+          owner: 'joint',
+          paymentMethod: 'PIX'
+        }
+      ],
+      transactions: []
+    };
+
+    const txs = syncMonthIncomeAndTitheTransactions(state, '2028-05');
+    expect(txs).toHaveLength(1);
+    expect(txs[0]).toMatchObject({
+      commitmentId: 'comm-health',
+      title: 'Plano de Saúde Unimed',
+      amount: 450,
+      dueDate: '2028-05-10'
+    });
+  });
 });
 

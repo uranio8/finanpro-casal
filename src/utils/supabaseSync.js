@@ -267,7 +267,8 @@ export function mergeCloudAndLocalState(localState, remoteState) {
     extraIncomes: mergeArrayById(localState.extraIncomes, remoteState.extraIncomes, mergedDeletedIds),
     goals: mergeArrayById(localState.goals, remoteState.goals, mergedDeletedIds),
     checklist: mergeArrayById(localState.checklist, remoteState.checklist, mergedDeletedIds),
-    savedStudents: mergeArrayById(localState.savedStudents, remoteState.savedStudents, mergedDeletedIds)
+    savedStudents: mergeArrayById(localState.savedStudents, remoteState.savedStudents, mergedDeletedIds),
+    categories: mergeArrayById(localState.categories, remoteState.categories, mergedDeletedIds)
   };
 }
 

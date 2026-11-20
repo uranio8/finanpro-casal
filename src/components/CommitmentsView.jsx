@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
   formatDateBR,
@@ -7,7 +6,8 @@ import {
   shiftYearMonth,
   getEffectiveMonthIncome,
   addMonthsToDate,
-  buildSafeDueDate
+  buildSafeDueDate,
+  getCategories
 } from '../utils/formatters';
 import CurrencyInput from './CurrencyInput';
 
@@ -44,6 +44,7 @@ export default function CommitmentsView({
   const modalVisible = isModalOpen || externalModalOpen;
 
   const { commitments, transactions, couple, cards, ownerFilter } = state;
+  const CATEGORIES = getCategories(state);
 
   const defaultCard = cards[0] || { id: 'card-inter', dueDay: 15, owner: 'partner1' };
 
@@ -155,7 +156,9 @@ export default function CommitmentsView({
 
         const paidInstallmentsCount = regularLinked.filter((t) => t.status === 'paid').length;
         const totalInstallmentsCount = regularLinked.length || c.installmentsCount || 1;
-        const isSettled = remaining <= 0.01 && linked.length > 0;
+        const isSettled = c.isIndefinite
+          ? c.active === false
+          : remaining <= 0.01 && linked.length > 0;
 
         // Prioritize actual real last transaction date so editing card due date propagates immediately!
         const computedEndDate =
@@ -199,11 +202,12 @@ export default function CommitmentsView({
   const installmentPreview = useMemo(() => {
     const rawVal = Number(form.totalAmount) || 0;
     const isRecurring = form.type === 'recurring';
+    const isIndefinite = isRecurring && form.installmentsCount === 'indefinite';
     const isMonthlyInput = isRecurring || form.valueMode === 'monthly';
     const effectiveDownPayment = (!isRecurring && form.hasDownPayment) ? Number(form.downPayment) || 0 : 0;
-    const count = Math.max(1, parseInt(form.installmentsCount, 10) || 1);
+    const count = isIndefinite ? 12 : Math.max(1, parseInt(form.installmentsCount, 10) || 1);
 
-    if (rawVal <= 0) return { list: [], endDate: form.startDate, valid: false, totalCalculated: 0 };
+    if (rawVal <= 0) return { list: [], endDate: form.startDate, valid: false, totalCalculated: 0, isIndefinite };
 
     const totalContract = isMonthlyInput
       ? Number((rawVal * count + effectiveDownPayment).toFixed(2))
@@ -228,7 +232,7 @@ export default function CommitmentsView({
     let sumSoFar = effectiveDownPayment;
     for (let i = 1; i <= count; i++) {
       const isLast = i === count;
-      const amount = isRecurring
+      const amount = isMonthlyInput
         ? rawVal
         : isLast
         ? Number((totalContract - sumSoFar).toFixed(2))
@@ -238,18 +242,23 @@ export default function CommitmentsView({
       const dueDate = addMonthsToDate(form.startDate, hasValidDown ? i : i - 1);
       list.push({
         number: i,
-        label: isRecurring ? `Mensalidade ${i}/${count}` : `Parcela ${i}/${count}`,
+        label: isIndefinite
+          ? `Mensalidade ${i} (Contínua)`
+          : isRecurring
+          ? `Mensalidade ${i}/${count}`
+          : `Parcela ${i}/${count}`,
         amount,
         dueDate
       });
     }
 
-    const lastDate = list.length > 0 ? list[list.length - 1].dueDate : form.startDate;
+    const lastDate = isIndefinite ? null : list.length > 0 ? list[list.length - 1].dueDate : form.startDate;
     return {
       list,
       endDate: lastDate,
-      totalCalculated: totalContract,
-      valid: effectiveDownPayment < totalContract
+      isIndefinite,
+      totalCalculated: isIndefinite ? rawVal : totalContract,
+      valid: isIndefinite ? true : effectiveDownPayment < totalContract
     };
   }, [form]);
 
@@ -274,9 +283,11 @@ export default function CommitmentsView({
 
     onAddCommitment({
       ...form,
+      isIndefinite: Boolean(installmentPreview.isIndefinite),
+      monthlyAmount: isRecurring ? total : installmentPreview.list[0]?.amount || total,
       totalAmount: installmentPreview.totalCalculated || total,
       downPayment: (!isRecurring && form.hasDownPayment) ? Number(form.downPayment) || 0 : 0,
-      installmentsCount: parseInt(form.installmentsCount, 10) || 1,
+      installmentsCount: installmentPreview.isIndefinite ? 12 : parseInt(form.installmentsCount, 10) || 1,
       endDate: installmentPreview.endDate,
       generatedInstallments: installmentPreview.list
     });
@@ -828,24 +839,36 @@ export default function CommitmentsView({
                     )}
                   </td>
                   <td className="text-center">
-                    <strong style={{ fontSize: '13px' }}>{formatDateBR(item.computedEndDate)}</strong>
+                    {item.isIndefinite ? (
+                      <span className="badge-pill badge-emerald" style={{ fontSize: '11.5px' }}>
+                        ♾️ Contínua
+                      </span>
+                    ) : (
+                      <strong style={{ fontSize: '13px' }}>{formatDateBR(item.computedEndDate)}</strong>
+                    )}
                   </td>
                   <td className="text-center" style={{ minWidth: '140px' }}>
-                    <div className="table-progress-wrap" style={{ margin: '0 auto' }}>
-                      <div className="table-progress-labels">
-                        <span>
-                          {item.paidInstallmentsCount}/{item.totalInstallmentsCount} parc.
-                          {item.hasDownPaymentTx && <small style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '3px' }}>+ Ent.</small>}
-                        </span>
-                        <span>{item.progressPct}%</span>
+                    {item.isIndefinite ? (
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        Mensal sem fim ({item.paidInstallmentsCount} pagas)
                       </div>
-                      <div className="progress-bar-track sm">
-                        <div
-                          className="progress-bar-fill"
-                          style={{ width: `${item.progressPct}%` }}
-                        />
+                    ) : (
+                      <div className="table-progress-wrap" style={{ margin: '0 auto' }}>
+                        <div className="table-progress-labels">
+                          <span>
+                            {item.paidInstallmentsCount}/{item.totalInstallmentsCount} parc.
+                            {item.hasDownPaymentTx && <small style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '3px' }}>+ Ent.</small>}
+                          </span>
+                          <span>{item.progressPct}%</span>
+                        </div>
+                        <div className="progress-bar-track sm">
+                          <div
+                            className="progress-bar-fill"
+                            style={{ width: `${item.progressPct}%` }}
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </td>
                   <td className="text-center">
                     <div className="row-actions">
@@ -1113,14 +1136,17 @@ export default function CommitmentsView({
 
                   <div className="form-group">
                     <label htmlFor="comm-count">
-                      {form.type === 'recurring' ? 'Meses de Duração (1 a 36 meses)' : 'Quantidade de Parcelas (1x a 36x)'}
+                      {form.type === 'recurring' ? 'Duração da Conta Fixa' : 'Quantidade de Parcelas (1x a 48x)'}
                     </label>
                     <select
                       id="comm-count"
                       value={form.installmentsCount}
                       onChange={(e) => setForm({ ...form, installmentsCount: e.target.value })}
                     >
-                      {Array.from({ length: 36 }, (_, i) => i + 1).map((n) => (
+                      {form.type === 'recurring' && (
+                        <option value="indefinite">♾️ Contínua (Sem data para finalizar)</option>
+                      )}
+                      {Array.from({ length: 48 }, (_, i) => i + 1).map((n) => (
                         <option key={n} value={n}>
                           {n}x {n === 1 ? (form.type === 'recurring' ? 'mês' : '(À Vista na Fatura)') : 'mensais'}
                         </option>
@@ -1136,7 +1162,11 @@ export default function CommitmentsView({
                       id="comm-end-preview"
                       type="text"
                       disabled
-                      value={formatDateBR(installmentPreview.endDate)}
+                      value={
+                        installmentPreview.isIndefinite
+                          ? '♾️ Sem data final (Contínua)'
+                          : formatDateBR(installmentPreview.endDate)
+                      }
                     />
                   </div>
                 </div>

@@ -1,13 +1,36 @@
 import React, { useState } from 'react';
-import { CATEGORIES, THEMES } from '../data/initialState';
-import { formatCurrency } from '../utils/formatters';
+import { THEMES } from '../data/initialState';
+import { formatCurrency, getCategories } from '../utils/formatters';
 import CurrencyInput from './CurrencyInput';
 import { SUPABASE_SQL_SETUP, isSupabaseConfigured } from '../utils/supabaseSync';
+
+const CATEGORY_ICONS = [
+  'fa-tags',
+  'fa-house-chimney',
+  'fa-cart-shopping',
+  'fa-car',
+  'fa-utensils',
+  'fa-couch',
+  'fa-heart-pulse',
+  'fa-tv',
+  'fa-plane-departure',
+  'fa-paw',
+  'fa-baby',
+  'fa-graduation-cap',
+  'fa-dumbbell',
+  'fa-gift',
+  'fa-shirt',
+  'fa-wrench',
+  'fa-hands-praying',
+  'fa-layer-group'
+];
 
 export default function SettingsView({
   state,
   onUpdateCoupleSettings,
   onUpdateCategoryBudgets,
+  onSaveCategory,
+  onDeleteCategory,
   onExportBackup,
   onImportBackup,
   onResetToDemo,
@@ -20,6 +43,8 @@ export default function SettingsView({
   onInstallPwa
 }) {
   const { couple, categoryBudgets } = state;
+  const CATEGORIES = getCategories(state);
+  const [catEditor, setCatEditor] = useState(null); // { id, name, icon, color, isNew }
 
   const [cloudForm, setCloudForm] = useState({
     url: supabaseConfig?.url || '',
@@ -441,19 +466,107 @@ export default function SettingsView({
         </div>
       </div>
 
-      {/* TETOS ORÇAMENTÁRIOS POR CATEGORIA */}
+      {/* TETOS ORÇAMENTÁRIOS & PERSONALIZAÇÃO DE CATEGORIAS */}
       <div className="card">
-        <div className="card-header flex-between">
+        <div className="card-header flex-between wrap" style={{ gap: '10px' }}>
           <div>
             <h3>
-              <i className="fa-solid fa-sliders"></i> Tetos de Gastos Mensais por Categoria
+              <i className="fa-solid fa-sliders"></i> Categorias de Gastos &amp; Tetos Mensais
             </h3>
             <p className="card-subtitle">
               Total Alocado nos Tetos: <strong>{formatCurrency(totalBudgetAllocated)}</strong> (
-              {allocationPct}% da Renda Base de {formatCurrency(totalIncome)})
+              {allocationPct}% da Renda Base de {formatCurrency(totalIncome)}) · Adicione ou edite categorias livremente
             </p>
           </div>
+          {onSaveCategory && (
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={() =>
+                setCatEditor({
+                  id: '',
+                  name: '',
+                  icon: 'fa-tags',
+                  color: '#3b82f6',
+                  isNew: true
+                })
+              }
+            >
+              <i className="fa-solid fa-plus"></i> + Nova Categoria
+            </button>
+          )}
         </div>
+
+        {catEditor && onSaveCategory && (
+          <div
+            style={{
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--primary)',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              marginBottom: '16px'
+            }}
+          >
+            <div className="form-grid-3" style={{ alignItems: 'end' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="cat-edit-name">
+                  {catEditor.isNew ? 'Nome da Nova Categoria *' : 'Editar Nome da Categoria *'}
+                </label>
+                <input
+                  id="cat-edit-name"
+                  type="text"
+                  placeholder="Ex: Pets, Educação, Academia..."
+                  value={catEditor.name}
+                  onChange={(e) => setCatEditor({ ...catEditor, name: e.target.value })}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="cat-edit-icon">Ícone</label>
+                <select
+                  id="cat-edit-icon"
+                  value={catEditor.icon}
+                  onChange={(e) => setCatEditor({ ...catEditor, icon: e.target.value })}
+                >
+                  {CATEGORY_ICONS.map((ic) => (
+                    <option key={ic} value={ic}>
+                      {ic.replace('fa-', '')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div className="form-group" style={{ marginBottom: 0, width: '64px' }}>
+                  <label htmlFor="cat-edit-color">Cor</label>
+                  <input
+                    id="cat-edit-color"
+                    type="color"
+                    value={catEditor.color}
+                    onChange={(e) => setCatEditor({ ...catEditor, color: e.target.value })}
+                    style={{ height: '38px', padding: '2px' }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={() => {
+                    if (!catEditor.name.trim()) return;
+                    onSaveCategory(catEditor);
+                    setCatEditor(null);
+                  }}
+                >
+                  <i className="fa-solid fa-check"></i> Salvar
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline"
+                  onClick={() => setCatEditor(null)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSaveBudgets}>
           <div className="progress-bar-track" style={{ marginBottom: '18px' }}>
@@ -466,10 +579,36 @@ export default function SettingsView({
           <div className="form-grid-3">
             {CATEGORIES.map((cat) => (
               <div key={cat.id} className="form-group">
-                <label htmlFor={`bud-${cat.id}`}>
-                  <i className={`fa-solid ${cat.icon}`} style={{ color: cat.color }}></i>{' '}
-                  {cat.name} (R$)
-                </label>
+                <div className="flex-between" style={{ marginBottom: '4px' }}>
+                  <label htmlFor={`bud-${cat.id}`} style={{ margin: 0 }}>
+                    <i className={`fa-solid ${cat.icon}`} style={{ color: cat.color }}></i>{' '}
+                    {cat.name} (R$)
+                  </label>
+                  {onSaveCategory && (
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        type="button"
+                        className="btn-link"
+                        style={{ fontSize: '11px' }}
+                        title="Editar nome, ícone ou cor desta categoria"
+                        onClick={() => setCatEditor({ ...cat, isNew: false })}
+                      >
+                        <i className="fa-solid fa-pen"></i>
+                      </button>
+                      {onDeleteCategory && cat.id !== 'dizimo' && cat.id !== 'outros' && (
+                        <button
+                          type="button"
+                          className="btn-link"
+                          style={{ fontSize: '11px', color: '#dc2626' }}
+                          title="Remover categoria"
+                          onClick={() => onDeleteCategory(cat.id)}
+                        >
+                          <i className="fa-solid fa-trash"></i>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <CurrencyInput
                   id={`bud-${cat.id}`}
                   value={budgetsForm[cat.id] ?? 0}

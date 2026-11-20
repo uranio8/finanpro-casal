@@ -5,6 +5,7 @@ import { parseStatementText } from '../utils/statementParser';
 
 export default function StatementImportModal({
   cards = [],
+  categories = CATEGORIES,
   couple,
   onImportTransactions,
   onClose
@@ -186,7 +187,7 @@ export default function StatementImportModal({
                           aria-label={`Categoria de ${it.title}`}
                           onChange={(e) => updateCategory(it.tempId, e.target.value)}
                         >
-                          {CATEGORIES.map((c) => (
+                          {categories.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name}
                             </option>
@@ -223,3 +224,4 @@ export default function StatementImportModal({
     </div>
   );
 }
+

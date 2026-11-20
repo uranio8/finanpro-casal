@@ -9,6 +9,7 @@ import {
   buildSafeDueDate,
   computeCardInvoiceDueDate,
   generateInstallmentSchedule,
+  getCategories,
   isAutoSalaryTransaction,
   syncMonthIncomeAndTitheTransactions
 } from './utils/formatters';
@@ -66,6 +67,8 @@ export default function App() {
     commitmentId: null
   });
   const [externalCommitmentModal, setExternalCommitmentModal] = useState(false);
+  const [quickCatEditor, setQuickCatEditor] = useState(null); // { id, name, color, icon, isNew }
+  const activeCategories = getCategories(state);
 
   const defaultCard = state.cards[0] || { id: 'card-inter', dueDay: 15, owner: 'partner1' };
 
@@ -613,6 +616,66 @@ export default function App() {
       ...cleanForm
     } = txForm;
 
+    // Se o usuário selecionou "Fixa Mensal (Contínua / Sem data para finalizar)" direto no modal de gasto
+    if (txForm.type === 'expense' && installmentMode === 'indefinite') {
+      const commId = `comm-${Date.now()}`;
+      const nowIso = new Date().toISOString();
+      const dueDay = Number((txForm.dueDate || '').split('-')[2]) || chosenCard?.dueDay || 10;
+      const newCommitment = {
+        id: commId,
+        title: txForm.title.trim(),
+        type: 'recurring',
+        isIndefinite: true,
+        active: true,
+        category: txForm.category,
+        totalAmount: amountNum,
+        monthlyAmount: amountNum,
+        downPayment: 0,
+        installmentsCount: 12,
+        startDate: txForm.dueDate,
+        endDate: null,
+        dueDay,
+        owner: txForm.owner,
+        paidBy: txForm.paidBy,
+        paymentMethod: txForm.paymentMethod,
+        cardId: effectiveCardId,
+        updatedAt: nowIso
+      };
+
+      const firstTx = {
+        id: `tx-indef-${commId}-${(txForm.dueDate || state.selectedMonth).slice(0, 7)}`,
+        commitmentId: commId,
+        title: txForm.title.trim(),
+        type: 'expense',
+        category: txForm.category,
+        amount: amountNum,
+        purchaseDate: txForm.purchaseDate || txForm.dueDate,
+        dueDate: txForm.dueDate,
+        paidDate: txForm.status === 'paid' ? txForm.dueDate : '',
+        status: txForm.status || 'pending',
+        owner: txForm.owner,
+        paidBy: txForm.paidBy,
+        paymentMethod: txForm.paymentMethod,
+        cardId: effectiveCardId,
+        alreadyFundedInCdi: Boolean(txForm.alreadyFundedInCdi),
+        fundedMonth: txForm.alreadyFundedInCdi ? txForm.fundedMonth || '' : '',
+        isIndefiniteRecurrence: true,
+        updatedAt: nowIso
+      };
+
+      setState((prev) => ({
+        ...prev,
+        commitments: [newCommitment, ...(prev.commitments || [])],
+        transactions: [firstTx, ...(prev.transactions || [])]
+      }));
+
+      setTxModal({ open: false, type: 'expense', editingId: null, commitmentId: null });
+      showToast(
+        `Gasto fixo contínuo "${txForm.title.trim()}" (${formatCurrency(amountNum)}/mês) ativado sem data final! ♾️`
+      );
+      return;
+    }
+
     // Se o usuário selecionou "Parcelado" (2x a 48x) direto no modal de gasto, gera automaticamente o parcelamento para os próximos meses
     const parsedCount = Math.max(1, parseInt(installmentsCount, 10) || 1);
     if (
@@ -1128,6 +1191,79 @@ export default function App() {
       })
     }));
     showToast('Fatura inteira marcada como já guardada no CDI! 💰✨');
+  };
+
+  const handleSaveCategory = (catData) => {
+    const cleanName = (catData?.name || '').trim();
+    if (!cleanName) return;
+    const nowIso = new Date().toISOString();
+    let createdOrEditedId = catData.id;
+
+    setState((prev) => {
+      const currentCats = getCategories(prev);
+      if (catData.isNew || !catData.id) {
+        const slug = cleanName
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '');
+        createdOrEditedId = `${slug || 'cat'}-${Date.now().toString().slice(-4)}`;
+        const newCat = {
+          id: createdOrEditedId,
+          name: cleanName,
+          icon: catData.icon || 'fa-tags',
+          color: catData.color || '#3b82f6',
+          updatedAt: nowIso
+        };
+        return {
+          ...prev,
+          categories: [...currentCats, newCat]
+        };
+      }
+      return {
+        ...prev,
+        categories: currentCats.map((c) =>
+          c.id === catData.id
+            ? {
+                ...c,
+                name: cleanName,
+                icon: catData.icon || c.icon,
+                color: catData.color || c.color,
+                updatedAt: nowIso
+              }
+            : c
+        )
+      };
+    });
+
+    if (createdOrEditedId && txModal.open) {
+      setTxForm((prev) => ({ ...prev, category: createdOrEditedId }));
+    }
+    showToast(catData.isNew ? `Categoria "${cleanName}" criada! 🏷️` : `Categoria "${cleanName}" atualizada! ✏️`);
+  };
+
+  const handleDeleteCategory = (catId) => {
+    if (!catId || catId === 'dizimo' || catId === 'outros') return;
+    setState((prev) => {
+      const currentCats = getCategories(prev);
+      const target = currentCats.find((c) => c.id === catId);
+      if (target && !window.confirm(`Deseja remover a categoria "${target.name}"? Os lançamentos dela passarão para "Outros Gastos".`)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        categories: currentCats.filter((c) => c.id !== catId),
+        deletedIds: { ...(prev.deletedIds || {}), [catId]: new Date().toISOString() },
+        transactions: (prev.transactions || []).map((t) =>
+          t.category === catId ? { ...t, category: 'outros' } : t
+        ),
+        commitments: (prev.commitments || []).map((c) =>
+          c.category === catId ? { ...c, category: 'outros' } : c
+        )
+      };
+    });
+    showToast('Categoria removida.');
   };
 
   const handleAddCommitment = (newCommData) => {
@@ -2161,6 +2297,8 @@ export default function App() {
               state={state}
               onUpdateCoupleSettings={handleUpdateCoupleSettings}
               onUpdateCategoryBudgets={handleUpdateCategoryBudgets}
+              onSaveCategory={handleSaveCategory}
+              onDeleteCategory={handleDeleteCategory}
               onExportBackup={handleExportBackup}
               onImportBackup={handleImportBackup}
               onResetToDemo={handleResetToDemo}
@@ -2240,7 +2378,11 @@ export default function App() {
             setTxModal({ open: false, type: 'expense', editingId: null, commitmentId: null })
           }
         >
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-box lg"
+            style={{ maxWidth: '760px', width: '94%' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3>
                 <i
@@ -2309,8 +2451,16 @@ export default function App() {
                   </button>
                 </div>
               )}
-              {/* LINHA 1: DESCRIÇÃO + VALOR COM MÁSCARA AUTOMÁTICA */}
-              <div className="form-grid-2" style={{ alignItems: 'end', marginBottom: '10px' }}>
+              {/* LINHA 1: DESCRIÇÃO (2fr) + VALOR COM MÁSCARA AUTOMÁTICA (1fr) */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '2fr 1fr',
+                  gap: '12px',
+                  alignItems: 'end',
+                  marginBottom: '12px'
+                }}
+              >
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label htmlFor="tx-title">Descrição da Compra ou Conta *</label>
                   <input
@@ -2320,7 +2470,7 @@ export default function App() {
                     placeholder={
                       txForm.type === 'income'
                         ? 'Ex: Salário, Freelance...'
-                        : 'Ex: Supermercado, Farmácia, Jantar...'
+                        : 'Ex: Supermercado, Plano de Saúde, Farmácia...'
                     }
                     value={txForm.title}
                     onChange={(e) => setTxForm({ ...txForm, title: e.target.value })}
@@ -2328,10 +2478,12 @@ export default function App() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label htmlFor="tx-amount">
-                    {txForm.installmentMode === 'installment'
+                    {txForm.installmentMode === 'indefinite'
+                      ? 'Valor Mensal Fixo (R$) *'
+                      : txForm.installmentMode === 'installment'
                       ? txForm.installmentValueMode === 'monthly'
-                        ? 'Valor Mensal da Parcela (R$) *'
-                        : 'Valor Total da Compra (R$) *'
+                        ? 'Valor da Parcela (R$) *'
+                        : 'Valor Total (R$) *'
                       : 'Valor (R$) *'}
                   </label>
                   <CurrencyInput
@@ -2345,69 +2497,74 @@ export default function App() {
                 </div>
               </div>
 
-              {/* FORMA DE PAGAMENTO EM PÍLULAS + À VISTA OU PARCELADO */}
+              {/* LINHA 2: FORMA DE PAGAMENTO + CONDIÇÃO (À VISTA / PARCELADO / FIXA SEM FIM) LADO A LADO */}
               {txForm.type === 'expense' ? (
                 <>
-                  <div className="form-group" style={{ marginBottom: '10px' }}>
-                    <label htmlFor="tx-method">Forma de Pagamento</label>
-                    <div
-                      id="tx-method"
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(4, 1fr)',
-                        gap: '6px'
-                      }}
-                    >
-                      {[
-                        { id: 'Cartão de Crédito', label: '💳 Cartão' },
-                        { id: 'PIX', label: '💠 PIX' },
-                        { id: 'Cartão de Débito', label: '💳 Débito' },
-                        { id: 'Boleto', label: '📄 Boleto' }
-                      ].map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          className={`btn btn-sm ${
-                            txForm.paymentMethod === m.id ? 'btn-primary' : 'btn-outline'
-                          }`}
-                          style={{ padding: '7px 6px', fontSize: '12px' }}
-                          onClick={() => {
-                            if (m.id === 'Cartão de Crédito' && state.cards[0]) {
-                              handleSelectCardInTxModal(txForm.cardId || state.cards[0].id);
-                            }
-                            setTxForm((prev) => ({
-                              ...prev,
-                              paymentMethod: m.id,
-                              installmentMode:
-                                m.id === 'Cartão de Crédito' ? prev.installmentMode : 'single'
-                            }));
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: !txModal.editingId ? '1.15fr 1fr' : '1fr',
+                      gap: '12px',
+                      marginBottom: '10px'
+                    }}
+                  >
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label htmlFor="tx-method">Forma de Pagamento</label>
+                      <div
+                        id="tx-method"
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(4, 1fr)',
+                          gap: '6px'
+                        }}
+                      >
+                        {[
+                          { id: 'Cartão de Crédito', label: '💳 Cartão' },
+                          { id: 'PIX', label: '💠 PIX' },
+                          { id: 'Cartão de Débito', label: '💳 Débito' },
+                          { id: 'Boleto', label: '📄 Boleto' }
+                        ].map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            className={`btn btn-sm ${
+                              txForm.paymentMethod === m.id ? 'btn-primary' : 'btn-outline'
+                            }`}
+                            style={{ padding: '7px 6px', fontSize: '12px' }}
+                            onClick={() => {
+                              if (m.id === 'Cartão de Crédito' && state.cards[0]) {
+                                handleSelectCardInTxModal(txForm.cardId || state.cards[0].id);
+                              }
+                              setTxForm((prev) => ({
+                                ...prev,
+                                paymentMethod: m.id
+                              }));
+                            }}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {!txModal.editingId && (
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label>Frequência / Parcelamento</label>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: '6px'
                           }}
                         >
-                          {m.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* SELETOR À VISTA (1x) vs PARCELADO (2x a 48x) */}
-                  {!txModal.editingId && (
-                    <div
-                      style={{
-                        background: 'var(--bg-subtle)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '10px',
-                        padding: '9px 12px',
-                        marginBottom: '10px'
-                      }}
-                    >
-                      <div className="flex-between wrap" style={{ gap: '8px' }}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
                           <button
                             type="button"
                             className={`btn btn-sm ${
-                              txForm.installmentMode !== 'installment' ? 'btn-primary' : 'btn-outline'
+                              txForm.installmentMode === 'single' || !txForm.installmentMode
+                                ? 'btn-primary'
+                                : 'btn-outline'
                             }`}
-                            style={{ padding: '5px 10px', fontSize: '12px' }}
+                            style={{ padding: '7px 6px', fontSize: '12px' }}
                             onClick={() =>
                               setTxForm((prev) => ({
                                 ...prev,
@@ -2423,7 +2580,7 @@ export default function App() {
                             className={`btn btn-sm ${
                               txForm.installmentMode === 'installment' ? 'btn-primary' : 'btn-outline'
                             }`}
-                            style={{ padding: '5px 10px', fontSize: '12px' }}
+                            style={{ padding: '7px 6px', fontSize: '12px' }}
                             onClick={() =>
                               setTxForm((prev) => ({
                                 ...prev,
@@ -2435,85 +2592,132 @@ export default function App() {
                           >
                             🔄 Parcelado
                           </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${
+                              txForm.installmentMode === 'indefinite' ? 'btn-primary' : 'btn-outline'
+                            }`}
+                            style={{ padding: '7px 6px', fontSize: '12px' }}
+                            title="Para contas contínuas sem data final (ex: Plano de Saúde, Condomínio, Internet, Academia)"
+                            onClick={() =>
+                              setTxForm((prev) => ({
+                                ...prev,
+                                installmentMode: 'indefinite'
+                              }))
+                            }
+                          >
+                            ♾️ Fixa Mensal
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* FAIXA EXPANSÍVEL QUANDO PARCELADO OU FIXA CONTÍNUA */}
+                  {!txModal.editingId && txForm.installmentMode === 'indefinite' && (
+                    <div
+                      style={{
+                        background: 'var(--bg-subtle)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        padding: '8px 12px',
+                        marginBottom: '10px',
+                        fontSize: '12px',
+                        color: 'var(--primary)',
+                        fontWeight: 600
+                      }}
+                    >
+                      <i className="fa-solid fa-infinity"></i> Gasto recorrente contínuo (sem data para finalizar) — será gerado automaticamente todos os meses por{' '}
+                      <strong>{formatCurrency(txForm.amount || 0)}/mês</strong>.
+                    </div>
+                  )}
+
+                  {!txModal.editingId && txForm.installmentMode === 'installment' && (
+                    <div
+                      style={{
+                        background: 'var(--bg-subtle)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        padding: '9px 12px',
+                        marginBottom: '10px'
+                      }}
+                    >
+                      <div className="flex-between wrap" style={{ gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${
+                                txForm.installmentValueMode === 'monthly' ? 'btn-soft' : 'btn-outline'
+                              }`}
+                              style={{ padding: '4px 8px', fontSize: '11.5px' }}
+                              onClick={() =>
+                                setTxForm((prev) => ({ ...prev, installmentValueMode: 'monthly' }))
+                              }
+                            >
+                              Valor Mensal
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${
+                                txForm.installmentValueMode !== 'monthly' ? 'btn-soft' : 'btn-outline'
+                              }`}
+                              style={{ padding: '4px 8px', fontSize: '11.5px' }}
+                              onClick={() =>
+                                setTxForm((prev) => ({ ...prev, installmentValueMode: 'total' }))
+                              }
+                            >
+                              Valor Total
+                            </button>
+                          </div>
+                          <label htmlFor="tx-inst-count" style={{ fontSize: '12px', margin: 0, fontWeight: 600 }}>
+                            Meses:
+                          </label>
+                          <select
+                            id="tx-inst-count"
+                            value={txForm.installmentsCount || 2}
+                            onChange={(e) =>
+                              setTxForm((prev) => ({
+                                ...prev,
+                                installmentsCount: Number(e.target.value)
+                              }))
+                            }
+                            style={{ padding: '4px 8px', fontSize: '12.5px', width: 'auto' }}
+                          >
+                            {Array.from({ length: 47 }, (_, i) => i + 2).map((n) => (
+                              <option key={n} value={n}>
+                                {n}x
+                              </option>
+                            ))}
+                          </select>
                         </div>
 
-                        {txForm.installmentMode === 'installment' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <button
-                                type="button"
-                                className={`btn btn-sm ${
-                                  txForm.installmentValueMode === 'monthly' ? 'btn-soft' : 'btn-outline'
-                                }`}
-                                style={{ padding: '4px 8px', fontSize: '11.5px' }}
-                                onClick={() =>
-                                  setTxForm((prev) => ({ ...prev, installmentValueMode: 'monthly' }))
-                                }
-                              >
-                                Valor Mensal
-                              </button>
-                              <button
-                                type="button"
-                                className={`btn btn-sm ${
-                                  txForm.installmentValueMode !== 'monthly' ? 'btn-soft' : 'btn-outline'
-                                }`}
-                                style={{ padding: '4px 8px', fontSize: '11.5px' }}
-                                onClick={() =>
-                                  setTxForm((prev) => ({ ...prev, installmentValueMode: 'total' }))
-                                }
-                              >
-                                Valor Total
-                              </button>
-                            </div>
-                            <label htmlFor="tx-inst-count" style={{ fontSize: '12px', margin: 0, fontWeight: 600 }}>
-                              Meses:
-                            </label>
-                            <select
-                              id="tx-inst-count"
-                              value={txForm.installmentsCount || 2}
-                              onChange={(e) =>
-                                setTxForm((prev) => ({
-                                  ...prev,
-                                  installmentsCount: Number(e.target.value)
-                                }))
-                              }
-                              style={{ padding: '4px 8px', fontSize: '12.5px', width: 'auto' }}
-                            >
-                              {Array.from({ length: 47 }, (_, i) => i + 2).map((n) => (
-                                <option key={n} value={n}>
-                                  {n}x
-                                </option>
-                              ))}
-                            </select>
+                        {Number(txForm.amount) > 0 && (
+                          <div style={{ fontSize: '12px', color: 'var(--primary)', fontWeight: 600 }}>
+                            {(() => {
+                              const count = txForm.installmentsCount || 2;
+                              const totalCalc =
+                                txForm.installmentValueMode === 'monthly'
+                                  ? Number((Number(txForm.amount) * count).toFixed(2))
+                                  : Number(txForm.amount);
+                              const sched = generateInstallmentSchedule(
+                                totalCalc,
+                                count,
+                                txForm.dueDate
+                              );
+                              const lastDue = sched[sched.length - 1]?.dueDate;
+                              return (
+                                <>
+                                  <i className="fa-solid fa-calendar-check"></i>{' '}
+                                  {sched.length}x de {formatCurrency(sched[0]?.amount)} (Total:{' '}
+                                  {formatCurrency(totalCalc)}) · Até{' '}
+                                  {getMonthLabel((lastDue || '').slice(0, 7))}
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
-
-                      {txForm.installmentMode === 'installment' && Number(txForm.amount) > 0 && (
-                        <div style={{ fontSize: '12px', color: 'var(--primary)', marginTop: '6px', fontWeight: 600 }}>
-                          {(() => {
-                            const count = txForm.installmentsCount || 2;
-                            const totalCalc =
-                              txForm.installmentValueMode === 'monthly'
-                                ? Number((Number(txForm.amount) * count).toFixed(2))
-                                : Number(txForm.amount);
-                            const sched = generateInstallmentSchedule(
-                              totalCalc,
-                              count,
-                              txForm.dueDate
-                            );
-                            const lastDue = sched[sched.length - 1]?.dueDate;
-                            return (
-                              <>
-                                <i className="fa-solid fa-calendar-check"></i>{' '}
-                                {sched.length}x de {formatCurrency(sched[0]?.amount)} (Total:{' '}
-                                {formatCurrency(totalCalc)}) · Automatizado até{' '}
-                                {getMonthLabel((lastDue || '').slice(0, 7))}
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -2671,16 +2875,111 @@ export default function App() {
                 </div>
               )}
 
-              {/* CATEGORIA, DIVISÃO E SITUAÇÃO EM 1 LINHA LIMPA */}
-              <div className="form-grid-3">
+              {/* CATEGORIA (COM ATALHO + NOVA / EDITAR), DIVISÃO E SITUAÇÃO EM 1 LINHA LARGA */}
+              {quickCatEditor && txForm.type === 'expense' && (
+                <div
+                  style={{
+                    background: 'var(--bg-subtle)',
+                    border: '1px solid var(--primary)',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    gap: '8px',
+                    alignItems: 'center',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <input
+                    id="quick-cat-name"
+                    type="text"
+                    aria-label="Nome da categoria"
+                    placeholder="Nome da categoria (ex: Pets, Academia...)"
+                    value={quickCatEditor.name}
+                    onChange={(e) =>
+                      setQuickCatEditor({ ...quickCatEditor, name: e.target.value })
+                    }
+                    style={{ flex: 1, minWidth: '160px', padding: '5px 8px', fontSize: '12.5px' }}
+                  />
+                  <input
+                    id="quick-cat-color"
+                    type="color"
+                    aria-label="Cor da categoria"
+                    value={quickCatEditor.color || '#3b82f6'}
+                    onChange={(e) =>
+                      setQuickCatEditor({ ...quickCatEditor, color: e.target.value })
+                    }
+                    style={{ width: '36px', height: '32px', padding: '2px' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => {
+                      if (!quickCatEditor.name.trim()) return;
+                      handleSaveCategory(quickCatEditor);
+                      setQuickCatEditor(null);
+                    }}
+                  >
+                    Salvar Categoria
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={() => setQuickCatEditor(null)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.35fr 1.15fr 0.9fr',
+                  gap: '12px'
+                }}
+              >
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label htmlFor="tx-cat">Categoria</label>
+                  <div className="flex-between" style={{ marginBottom: '4px' }}>
+                    <label htmlFor="tx-cat" style={{ margin: 0 }}>Categoria</label>
+                    {txForm.type === 'expense' && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className="btn-link"
+                          style={{ fontSize: '11px' }}
+                          onClick={() =>
+                            setQuickCatEditor({
+                              id: '',
+                              name: '',
+                              icon: 'fa-tags',
+                              color: '#3b82f6',
+                              isNew: true
+                            })
+                          }
+                        >
+                          + Nova
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-link"
+                          style={{ fontSize: '11px' }}
+                          onClick={() => {
+                            const curr = activeCategories.find((c) => c.id === txForm.category);
+                            if (curr) setQuickCatEditor({ ...curr, isNew: false });
+                          }}
+                        >
+                          ✏️ Editar
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <select
                     id="tx-cat"
                     value={txForm.category}
                     onChange={(e) => setTxForm({ ...txForm, category: e.target.value })}
                   >
-                    {(txForm.type === 'income' ? INCOME_CATEGORIES : CATEGORIES).map((c) => (
+                    {(txForm.type === 'income' ? INCOME_CATEGORIES : activeCategories).map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
@@ -2786,7 +3085,11 @@ export default function App() {
           className="modal-backdrop"
           onClick={() => setIsMonthIncomeModalOpen(false)}
         >
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-box lg"
+            style={{ maxWidth: '760px', width: '94%' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3>
                 <i className="fa-solid fa-money-bill-wave text-emerald"></i> Renda de{' '}

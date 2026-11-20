@@ -1,4 +1,4 @@
-import { INITIAL_STATE } from '../data/initialState';
+import { INITIAL_STATE, CATEGORIES } from '../data/initialState';
 import { syncMonthIncomeAndTitheTransactions } from './formatters';
 
 export function mapLegacyCardId(cid) {
@@ -93,6 +93,10 @@ export function loadInitialFinanceState(storageKey) {
           ? parsed.extraIncomes
           : INITIAL_STATE.extraIncomes,
         weeklyExtraFuelCosts: parsed.weeklyExtraFuelCosts || {},
+        categories:
+          Array.isArray(parsed.categories) && parsed.categories.length > 0
+            ? parsed.categories
+            : CATEGORIES,
         savedStudents: Array.isArray(parsed.savedStudents) ? parsed.savedStudents : [],
         deletedIds: parsed.deletedIds || {}
       };
@@ -110,6 +114,7 @@ export function loadInitialFinanceState(storageKey) {
   }
   return {
     ...INITIAL_STATE,
+    categories: CATEGORIES,
     savedStudents: [],
     deletedIds: {},
     transactions: syncMonthIncomeAndTitheTransactions(
@@ -118,3 +123,4 @@ export function loadInitialFinanceState(storageKey) {
     )
   };
 }
+

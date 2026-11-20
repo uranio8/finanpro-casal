@@ -1,16 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
   formatDateBR,
   getMonthLabel,
   getEffectiveMonthIncome,
   getMonthlyExtraNetSummary,
+  getCategories,
   isAutoSalaryTransaction,
   isAutoTitheOrDonationTransaction
 } from '../utils/formatters';
 
 export default function ReportPrintModal({ state, onClose }) {
+  const CATEGORIES = getCategories(state);
   const {
     selectedMonth,
     couple,

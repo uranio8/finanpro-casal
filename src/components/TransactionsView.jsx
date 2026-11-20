@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect, Suspense, lazy } from 'react';
-import { CATEGORIES, INCOME_CATEGORIES } from '../data/initialState';
+import { INCOME_CATEGORIES } from '../data/initialState';
 import {
   formatCurrency,
   formatDateBR,
-  getMonthLabel
+  getMonthLabel,
+  getCategories
 } from '../utils/formatters';
 
 const StatementImportModal = lazy(() => import('./StatementImportModal'));
@@ -33,6 +34,7 @@ export default function TransactionsView({
   });
 
   const { selectedMonth, transactions, couple, cards = [], ownerFilter } = state;
+  const CATEGORIES = getCategories(state);
 
   const todayStr = useMemo(() => {
     const now = new Date();
@@ -632,6 +634,7 @@ export default function TransactionsView({
         <Suspense fallback={null}>
           <StatementImportModal
             cards={cards}
+            categories={CATEGORIES}
             couple={couple}
             onImportTransactions={onImportStatementTransactions}
             onClose={() => setIsImportModalOpen(false)}

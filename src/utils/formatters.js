@@ -1,3 +1,12 @@
+import { CATEGORIES } from '../data/initialState';
+
+export function getCategories(state) {
+  if (Array.isArray(state?.categories) && state.categories.length > 0) {
+    return state.categories;
+  }
+  return CATEGORIES;
+}
+
 export function formatCurrency(value) {
   const num = Number(value) || 0;
   return num.toLocaleString('pt-BR', {
@@ -529,6 +538,42 @@ export function syncMonthIncomeAndTitheTransactions(state, targetYearMonth) {
   } else if (donIdx >= 0) {
     newTransactions.splice(donIdx, 1);
   }
+
+  // 5. Contas Fixas Recorrentes Contínuas (sem data final / isIndefinite)
+  const indefiniteComms = (state.commitments || []).filter(
+    (c) =>
+      c.type === 'recurring' &&
+      c.isIndefinite &&
+      c.active !== false &&
+      (!c.startDate || c.startDate.slice(0, 7) <= ym)
+  );
+  indefiniteComms.forEach((c) => {
+    const existsInYm = newTransactions.some(
+      (t) => t.commitmentId === c.id && t.dueDate && t.dueDate.startsWith(ym)
+    );
+    if (!existsInYm) {
+      const day = c.dueDay || Number((c.startDate || '').split('-')[2]) || 10;
+      const amt = Number(c.monthlyAmount || c.totalAmount || 0);
+      if (amt > 0) {
+        newTransactions.push({
+          id: `tx-indef-${c.id}-${ym}`,
+          commitmentId: c.id,
+          title: c.title,
+          type: 'expense',
+          category: c.category || 'saude',
+          amount: amt,
+          dueDate: buildSafeDueDate(ym, day),
+          paidDate: '',
+          status: 'pending',
+          owner: c.owner || 'joint',
+          paidBy: c.paidBy || (c.owner === 'partner2' ? 'partner2' : 'partner1'),
+          paymentMethod: c.paymentMethod || 'PIX',
+          cardId: c.paymentMethod === 'Cartão de Crédito' ? c.cardId || '' : '',
+          isIndefiniteRecurrence: true
+        });
+      }
+    }
+  });
 
   return newTransactions;
 }
