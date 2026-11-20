@@ -17,6 +17,7 @@ import {
   getDaysDiffFromToday,
   getEffectiveMonthIncome,
   getMonthlyExtraNetSummary,
+  getMonthlyCdiReserveSummary,
   isAutoSalaryTransaction,
   isAutoTitheOrDonationTransaction
 } from '../utils/formatters';
@@ -178,8 +179,13 @@ export default function DashboardView({
     [monthExpenses]
   );
 
+  const cdiReserve = useMemo(
+    () => getMonthlyCdiReserveSummary(transactions, selectedMonth, ownerFilter),
+    [transactions, selectedMonth, ownerFilter]
+  );
+
   const totalPendingExpense = Math.max(0, totalExpense - totalPaidExpense);
-  const freeBalance = totalIncome - totalExpense;
+  const freeBalance = totalIncome - totalExpense + cdiReserve.netBudgetDelta;
   const paidPercentage = totalExpense > 0 ? Math.round((totalPaidExpense / totalExpense) * 100) : 0;
   const committedIncomePct = totalIncome > 0 ? Math.round((totalExpense / totalIncome) * 100) : 0;
 
@@ -480,6 +486,9 @@ export default function DashboardView({
             <span className="kpi-sub">
               Pago: <strong className="text-emerald">{formatCurrency(totalPaidExpense)}</strong> · Falta:{' '}
               <strong className="text-amber">{formatCurrency(totalPendingExpense)}</strong>
+              {cdiReserve.coveredFromPriorReserve > 0 && (
+                <> · Guardado CDI: <strong className="text-emerald">{formatCurrency(cdiReserve.coveredFromPriorReserve)}</strong></>
+              )}
             </span>
           </div>
         </div>

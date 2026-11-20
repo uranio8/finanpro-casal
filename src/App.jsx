@@ -409,6 +409,8 @@ export default function App() {
       paidBy: chosenCard.owner === 'partner2' ? 'partner2' : 'partner1',
       paymentMethod: isExpense ? 'Cartão de Crédito' : 'PIX',
       cardId: isExpense ? chosenCard.id : '',
+      alreadyFundedInCdi: false,
+      fundedMonth: shiftYearMonth(state.selectedMonth, -1),
       propagateToPendingInstallments: false
     });
     setTxModal({ open: true, type, editingId: null, commitmentId: null });
@@ -428,6 +430,10 @@ export default function App() {
       paidBy: tx.paidBy || 'partner1',
       paymentMethod: tx.paymentMethod || (tx.cardId ? 'Cartão de Crédito' : 'PIX'),
       cardId: tx.cardId || state.cards[0]?.id || '',
+      alreadyFundedInCdi: Boolean(tx.alreadyFundedInCdi),
+      fundedMonth:
+        tx.fundedMonth ||
+        shiftYearMonth((tx.dueDate || state.selectedMonth).slice(0, 7), -1),
       propagateToPendingInstallments: Boolean(tx.commitmentId)
     });
     setTxModal({
@@ -485,7 +491,9 @@ export default function App() {
               owner: txForm.owner,
               paidBy: txForm.paidBy,
               paymentMethod: txForm.paymentMethod,
-              cardId: effectiveCardId
+              cardId: effectiveCardId,
+              alreadyFundedInCdi: Boolean(txForm.alreadyFundedInCdi),
+              fundedMonth: txForm.alreadyFundedInCdi ? txForm.fundedMonth || '' : ''
             };
           }
           if (shouldPropagate && t.commitmentId === commId && t.status === 'pending') {
@@ -521,20 +529,20 @@ export default function App() {
           updatedCommitments = prev.commitments.map((c) =>
             c.id === commId
               ? {
-                  ...c,
-                  ...(shouldPropagate
-                    ? {
-                        title: txForm.title.trim(),
-                        category: txForm.category,
-                        owner: txForm.owner,
-                        paidBy: txForm.paidBy,
-                        paymentMethod: txForm.paymentMethod,
-                        cardId: effectiveCardId
-                      }
-                    : {}),
-                  totalAmount: newTotal,
-                  endDate: newEnd || c.endDate
-                }
+                ...c,
+                ...(shouldPropagate
+                  ? {
+                    title: txForm.title.trim(),
+                    category: txForm.category,
+                    owner: txForm.owner,
+                    paidBy: txForm.paidBy,
+                    paymentMethod: txForm.paymentMethod,
+                    cardId: effectiveCardId
+                  }
+                  : {}),
+                totalAmount: newTotal,
+                endDate: newEnd || c.endDate
+              }
               : c
           );
         }
@@ -554,9 +562,9 @@ export default function App() {
             couple:
               targetYm === prev.selectedMonth
                 ? {
-                    ...prev.couple,
-                    ...(isP2 ? { partner2Income: amountNum } : { partner1Income: amountNum })
-                  }
+                  ...prev.couple,
+                  ...(isP2 ? { partner2Income: amountNum } : { partner1Income: amountNum })
+                }
                 : prev.couple,
             monthlyIncomes: {
               ...(prev.monthlyIncomes || {}),
@@ -589,6 +597,8 @@ export default function App() {
       ...cleanForm,
       cardId: effectiveCardId,
       amount: amountNum,
+      alreadyFundedInCdi: Boolean(txForm.alreadyFundedInCdi),
+      fundedMonth: txForm.alreadyFundedInCdi ? txForm.fundedMonth || '' : '',
       paidDate: txForm.status === 'paid' ? txForm.dueDate : ''
     };
 
@@ -602,8 +612,8 @@ export default function App() {
       txForm.type === 'income'
         ? 'Receita registrada com sucesso!'
         : txForm.paymentMethod === 'Cartão de Crédito' && chosenCard
-        ? `Gasto lançado na fatura do ${chosenCard.name}! 💳`
-        : 'Despesa lançada com sucesso!'
+          ? `Gasto lançado na fatura do ${chosenCard.name}! 💳`
+          : 'Despesa lançada com sucesso!'
     );
   };
 
@@ -632,8 +642,8 @@ export default function App() {
       candidateSourceTxs.length > 0
         ? candidateSourceTxs
         : state.transactions.filter(
-            (t) => t.dueDate && t.dueDate.startsWith('2026-11') && isEligibleFixedExpense(t)
-          );
+          (t) => t.dueDate && t.dueDate.startsWith('2026-11') && isEligibleFixedExpense(t)
+        );
 
     const existingTitlesInTarget = new Set(
       state.transactions
@@ -687,10 +697,10 @@ export default function App() {
       transactions: prev.transactions.map((t) =>
         t.id === txId
           ? {
-              ...t,
-              status: 'paid',
-              paidDate: t.dueDate || `${prev.selectedMonth}-10`
-            }
+            ...t,
+            status: 'paid',
+            paidDate: t.dueDate || `${prev.selectedMonth}-10`
+          }
           : t
       )
     }));
@@ -760,11 +770,11 @@ export default function App() {
         const updatedCommitments = prev.commitments.map((c) =>
           c.id === commId
             ? {
-                ...c,
-                totalAmount: newTotalAmount,
-                installmentsCount: newTotalCount,
-                endDate: newEndDate
-              }
+              ...c,
+              totalAmount: newTotalAmount,
+              installmentsCount: newTotalCount,
+              endDate: newEndDate
+            }
             : c
         );
 
@@ -936,12 +946,12 @@ export default function App() {
       const nowIso = new Date().toISOString();
       const nextStudents = found
         ? existing.map((s) =>
-            s.id === found.id ? { ...s, name, defaultTitle, unitPrice, updatedAt: nowIso } : s
-          )
+          s.id === found.id ? { ...s, name, defaultTitle, unitPrice, updatedAt: nowIso } : s
+        )
         : [
-            ...existing,
-            { id: `stu-${Date.now()}`, name, defaultTitle, unitPrice, updatedAt: nowIso }
-          ];
+          ...existing,
+          { id: `stu-${Date.now()}`, name, defaultTitle, unitPrice, updatedAt: nowIso }
+        ];
       return { ...prev, savedStudents: nextStudents };
     });
     showToast(`Aluno "${name}" salvo para lançamentos rápidos! 🎓`);
@@ -983,6 +993,50 @@ export default function App() {
     showToast(`${importedTxs.length} lançamento(s) importado(s) do extrato! 📄`);
   };
 
+  const handleToggleTransactionCdiReserve = (txId) => {
+    setState((prev) => ({
+      ...prev,
+      transactions: prev.transactions.map((t) => {
+        if (t.id !== txId) return t;
+        const nextFunded = !t.alreadyFundedInCdi;
+        const txYm = (t.dueDate || prev.selectedMonth).slice(0, 7);
+        return {
+          ...t,
+          alreadyFundedInCdi: nextFunded,
+          fundedMonth: nextFunded ? t.fundedMonth || shiftYearMonth(txYm, -1) : '',
+          updatedAt: new Date().toISOString()
+        };
+      })
+    }));
+    showToast('Reserva CDI da compra atualizada! 💰');
+  };
+
+  const handleFundAllCardInvoiceInCdi = (cardId, ym) => {
+    const targetYm = ym || state.selectedMonth;
+    const defaultFundedMonth = shiftYearMonth(targetYm, -1);
+    setState((prev) => ({
+      ...prev,
+      transactions: prev.transactions.map((t) => {
+        if (
+          t.type === 'expense' &&
+          t.cardId === cardId &&
+          t.dueDate &&
+          t.dueDate.startsWith(targetYm) &&
+          !t.alreadyFundedInCdi
+        ) {
+          return {
+            ...t,
+            alreadyFundedInCdi: true,
+            fundedMonth: defaultFundedMonth,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return t;
+      })
+    }));
+    showToast('Fatura inteira marcada como já guardada no CDI! 💰✨');
+  };
+
   const handleAddCommitment = (newCommData) => {
     const commId = `comm-${Date.now()}`;
     const { generatedInstallments, ...commRecord } = newCommData;
@@ -1015,8 +1069,8 @@ export default function App() {
         inst.number === 0
           ? '' // Entrada à vista não infla nem prende limite de fatura de cartão
           : commRecord.paymentMethod === 'Cartão de Crédito'
-          ? commRecord.cardId
-          : '',
+            ? commRecord.cardId
+            : '',
       installmentNumber: inst.number,
       totalInstallments: commRecord.installmentsCount
     }));
@@ -1062,7 +1116,7 @@ export default function App() {
         updates.paymentMethod === 'Cartão de Crédito' ? updates.cardId || '' : '';
       const newPendingInstallmentAmount =
         updates.pendingInstallmentAmount !== undefined &&
-        Number(updates.pendingInstallmentAmount) > 0
+          Number(updates.pendingInstallmentAmount) > 0
           ? Number(updates.pendingInstallmentAmount)
           : null;
 
@@ -1104,17 +1158,17 @@ export default function App() {
       const updatedCommitments = prev.commitments.map((c) =>
         c.id === commId
           ? {
-              ...c,
-              title: updates.title,
-              category: updates.category,
-              owner: updates.owner,
-              paidBy: updates.paidBy,
-              paymentMethod: updates.paymentMethod,
-              cardId: effectiveCardId,
-              notes: updates.notes ?? c.notes,
-              totalAmount: newTotalAmount,
-              endDate: newEndDate || c.endDate
-            }
+            ...c,
+            title: updates.title,
+            category: updates.category,
+            owner: updates.owner,
+            paidBy: updates.paidBy,
+            paymentMethod: updates.paymentMethod,
+            cardId: effectiveCardId,
+            notes: updates.notes ?? c.notes,
+            totalAmount: newTotalAmount,
+            endDate: newEndDate || c.endDate
+          }
           : c
       );
 
@@ -1195,10 +1249,10 @@ export default function App() {
       const updatedCommitments = prev.commitments.map((c) =>
         c.id === commId
           ? {
-              ...c,
-              totalAmount: newTotalAmount,
-              endDate: newEndDate || c.endDate
-            }
+            ...c,
+            totalAmount: newTotalAmount,
+            endDate: newEndDate || c.endDate
+          }
           : c
       );
 
@@ -1212,11 +1266,11 @@ export default function App() {
     showToast(
       cleanDiscount > 0
         ? `${txIdsToAnticipate.length} parcela(s) antecipada(s) com economia de ${formatCurrency(
-            cleanDiscount
-          )}! ⚡🎉`
+          cleanDiscount
+        )}! ⚡🎉`
         : `${txIdsToAnticipate.length} parcela(s) antecipada(s) para ${getMonthLabel(
-            state.selectedMonth
-          )}! ⚡`
+          state.selectedMonth
+        )}! ⚡`
     );
   };
 
@@ -1238,8 +1292,8 @@ export default function App() {
       updatedCardData.owner === 'partner2'
         ? 'partner2'
         : updatedCardData.owner === 'partner1'
-        ? 'partner1'
-        : null;
+          ? 'partner1'
+          : null;
 
     setState((prev) => {
       // 1. Update card
@@ -1271,8 +1325,8 @@ export default function App() {
             linked.length > 0
               ? linked[linked.length - 1].dueDate
               : comm.endDate
-              ? buildSafeDueDate(comm.endDate.slice(0, 7), dueDayNum)
-              : comm.endDate;
+                ? buildSafeDueDate(comm.endDate.slice(0, 7), dueDayNum)
+                : comm.endDate;
 
           const newStartDate = comm.startDate
             ? buildSafeDueDate(comm.startDate.slice(0, 7), dueDayNum)
@@ -1341,14 +1395,14 @@ export default function App() {
       ...prev,
       transactions: prev.transactions.map((t) =>
         t.cardId === cardId &&
-        t.dueDate &&
-        t.dueDate.startsWith(yearMonth) &&
-        t.status === 'pending'
+          t.dueDate &&
+          t.dueDate.startsWith(yearMonth) &&
+          t.status === 'pending'
           ? {
-              ...t,
-              status: 'paid',
-              paidDate: t.dueDate || `${yearMonth}-15`
-            }
+            ...t,
+            status: 'paid',
+            paidDate: t.dueDate || `${yearMonth}-15`
+          }
           : t
       )
     }));
@@ -1592,20 +1646,20 @@ export default function App() {
       const updatedMonthlyIncomes =
         hasIncomeOrDonationUpdate && prev.monthlyIncomes?.[ym]
           ? {
-              ...prev.monthlyIncomes,
-              [ym]: {
-                ...prev.monthlyIncomes[ym],
-                ...(updates.partner1Income !== undefined
-                  ? { partner1Income: Number(updates.partner1Income) }
-                  : {}),
-                ...(updates.partner2Income !== undefined
-                  ? { partner2Income: Number(updates.partner2Income) }
-                  : {}),
-                ...(updates.donationAmount !== undefined
-                  ? { donationAmount: Number(updates.donationAmount) }
-                  : {})
-              }
+            ...prev.monthlyIncomes,
+            [ym]: {
+              ...prev.monthlyIncomes[ym],
+              ...(updates.partner1Income !== undefined
+                ? { partner1Income: Number(updates.partner1Income) }
+                : {}),
+              ...(updates.partner2Income !== undefined
+                ? { partner2Income: Number(updates.partner2Income) }
+                : {}),
+              ...(updates.donationAmount !== undefined
+                ? { donationAmount: Number(updates.donationAmount) }
+                : {})
             }
+          }
           : prev.monthlyIncomes;
 
       const nextState = {
@@ -1869,22 +1923,21 @@ export default function App() {
                 onClick={() => handlePullFromCloud()}
               >
                 <i
-                  className={`fa-solid ${
-                    cloudSyncStatus === 'syncing'
+                  className={`fa-solid ${cloudSyncStatus === 'syncing'
                       ? 'fa-arrows-rotate fa-spin'
                       : cloudSyncStatus === 'error'
-                      ? 'fa-triangle-exclamation text-amber'
-                      : 'fa-cloud-check text-emerald'
-                  }`}
+                        ? 'fa-triangle-exclamation text-amber'
+                        : 'fa-cloud-check text-emerald'
+                    }`}
                 ></i>{' '}
                 <span>
                   {!isOnline
                     ? 'Offline'
                     : cloudSyncStatus === 'syncing'
-                    ? 'Sincronizando...'
-                    : cloudSyncStatus === 'error'
-                    ? 'Erro Nuvem'
-                    : 'Nuvem'}
+                      ? 'Sincronizando...'
+                      : cloudSyncStatus === 'error'
+                        ? 'Erro Nuvem'
+                        : 'Nuvem'}
                 </span>
               </button>
             )}
@@ -1916,114 +1969,116 @@ export default function App() {
             </div>
           }
         >
-        {activeRoute === 'dashboard' && (
-          <DashboardView
-            state={state}
-            onNavigate={setActiveRoute}
-            onOpenNewTransaction={handleOpenNewTransaction}
-            onQuickPayTransaction={handleQuickPayTransaction}
-            onOpenMonthIncomeModal={openMonthIncomeModal}
-            onOpenReportModal={() => setIsReportModalOpen(true)}
-            onOpenCommitmentModal={() => {
-              setActiveRoute('commitments');
-              setExternalCommitmentModal(true);
-            }}
-          />
-        )}
+          {activeRoute === 'dashboard' && (
+            <DashboardView
+              state={state}
+              onNavigate={setActiveRoute}
+              onOpenNewTransaction={handleOpenNewTransaction}
+              onQuickPayTransaction={handleQuickPayTransaction}
+              onOpenMonthIncomeModal={openMonthIncomeModal}
+              onOpenReportModal={() => setIsReportModalOpen(true)}
+              onOpenCommitmentModal={() => {
+                setActiveRoute('commitments');
+                setExternalCommitmentModal(true);
+              }}
+            />
+          )}
 
-        {activeRoute === 'extra-income' && (
-          <ExtraIncomeView
-            state={state}
-            onAddExtraIncome={handleAddExtraIncome}
-            onUpdateExtraIncome={handleUpdateExtraIncome}
-            onToggleExtraIncomeStatus={handleToggleExtraIncomeStatus}
-            onDeleteExtraIncome={handleDeleteExtraIncome}
-            onUpdateWeeklyExtraFuel={handleUpdateWeeklyExtraFuel}
-            onSplitWeeklyExtraFuel={handleSplitWeeklyExtraFuel}
-            onSaveStudentProfile={handleSaveStudentProfile}
-            onCarryFuelToNextMonth={handleCarryFuelToNextMonth}
-          />
-        )}
+          {activeRoute === 'extra-income' && (
+            <ExtraIncomeView
+              state={state}
+              onAddExtraIncome={handleAddExtraIncome}
+              onUpdateExtraIncome={handleUpdateExtraIncome}
+              onToggleExtraIncomeStatus={handleToggleExtraIncomeStatus}
+              onDeleteExtraIncome={handleDeleteExtraIncome}
+              onUpdateWeeklyExtraFuel={handleUpdateWeeklyExtraFuel}
+              onSplitWeeklyExtraFuel={handleSplitWeeklyExtraFuel}
+              onSaveStudentProfile={handleSaveStudentProfile}
+              onCarryFuelToNextMonth={handleCarryFuelToNextMonth}
+            />
+          )}
 
-        {activeRoute === 'commitments' && (
-          <CommitmentsView
-            state={state}
-            onAddCommitment={handleAddCommitment}
-            onUpdateCommitment={handleUpdateCommitment}
-            onAnticipateInstallments={handleAnticipateInstallments}
-            onDeleteCommitment={handleDeleteCommitment}
-            onQuickPayTransaction={handleQuickPayTransaction}
-            externalModalOpen={externalCommitmentModal}
-            setExternalModalOpen={setExternalCommitmentModal}
-          />
-        )}
+          {activeRoute === 'commitments' && (
+            <CommitmentsView
+              state={state}
+              onAddCommitment={handleAddCommitment}
+              onUpdateCommitment={handleUpdateCommitment}
+              onAnticipateInstallments={handleAnticipateInstallments}
+              onDeleteCommitment={handleDeleteCommitment}
+              onQuickPayTransaction={handleQuickPayTransaction}
+              externalModalOpen={externalCommitmentModal}
+              setExternalModalOpen={setExternalCommitmentModal}
+            />
+          )}
 
-        {activeRoute === 'transactions' && (
-          <TransactionsView
-            state={state}
-            onOpenNewTransaction={handleOpenNewTransaction}
-            onOpenEditTransaction={handleOpenEditTransaction}
-            onClonePreviousMonthFixedExpenses={handleClonePreviousMonthFixedExpenses}
-            onImportStatementTransactions={handleImportStatementTransactions}
-            onToggleTransactionStatus={handleToggleTransactionStatus}
-            onDeleteTransaction={handleDeleteTransaction}
-          />
-        )}
+          {activeRoute === 'transactions' && (
+            <TransactionsView
+              state={state}
+              onOpenNewTransaction={handleOpenNewTransaction}
+              onOpenEditTransaction={handleOpenEditTransaction}
+              onClonePreviousMonthFixedExpenses={handleClonePreviousMonthFixedExpenses}
+              onImportStatementTransactions={handleImportStatementTransactions}
+              onToggleTransactionStatus={handleToggleTransactionStatus}
+              onDeleteTransaction={handleDeleteTransaction}
+            />
+          )}
 
-        {activeRoute === 'cards' && (
-          <CardsView
-            state={state}
-            onAddCard={handleAddCard}
-            onUpdateCard={handleUpdateCard}
-            onDeleteCard={handleDeleteCard}
-            onPayFullCardInvoice={handlePayFullCardInvoice}
-            onOpenNewTransactionWithCard={(cardId) =>
-              handleOpenNewTransaction('expense', cardId)
-            }
-          />
-        )}
+          {activeRoute === 'cards' && (
+            <CardsView
+              state={state}
+              onAddCard={handleAddCard}
+              onUpdateCard={handleUpdateCard}
+              onDeleteCard={handleDeleteCard}
+              onPayFullCardInvoice={handlePayFullCardInvoice}
+              onOpenNewTransactionWithCard={(cardId) =>
+                handleOpenNewTransaction('expense', cardId)
+              }
+              onToggleTransactionCdiReserve={handleToggleTransactionCdiReserve}
+              onFundAllCardInvoiceInCdi={handleFundAllCardInvoiceInCdi}
+            />
+          )}
 
-        {activeRoute === 'goals' && (
-          <GoalsAndChecklistView
-            state={state}
-            onAddGoal={handleAddGoal}
-            onUpdateGoal={handleUpdateGoal}
-            onDepositGoal={handleDepositGoal}
-            onDeleteGoal={handleDeleteGoal}
-            onToggleChecklist={handleToggleChecklist}
-            onAddChecklistItem={handleAddChecklistItem}
-            onDeleteChecklistItem={handleDeleteChecklistItem}
-            onResetChecklist={handleResetChecklist}
-          />
-        )}
+          {activeRoute === 'goals' && (
+            <GoalsAndChecklistView
+              state={state}
+              onAddGoal={handleAddGoal}
+              onUpdateGoal={handleUpdateGoal}
+              onDepositGoal={handleDepositGoal}
+              onDeleteGoal={handleDeleteGoal}
+              onToggleChecklist={handleToggleChecklist}
+              onAddChecklistItem={handleAddChecklistItem}
+              onDeleteChecklistItem={handleDeleteChecklistItem}
+              onResetChecklist={handleResetChecklist}
+            />
+          )}
 
-        {activeRoute === 'couple' && (
-          <CoupleSplitView
-            state={state}
-            onUpdateCoupleSettings={handleUpdateCoupleSettings}
-            onOpenMonthIncomeModal={openMonthIncomeModal}
-            onSettleMonthSplit={handleSettleMonthSplit}
-            onReopenMonthSplit={handleReopenMonthSplit}
-          />
-        )}
+          {activeRoute === 'couple' && (
+            <CoupleSplitView
+              state={state}
+              onUpdateCoupleSettings={handleUpdateCoupleSettings}
+              onOpenMonthIncomeModal={openMonthIncomeModal}
+              onSettleMonthSplit={handleSettleMonthSplit}
+              onReopenMonthSplit={handleReopenMonthSplit}
+            />
+          )}
 
-        {activeRoute === 'settings' && (
-          <SettingsView
-            state={state}
-            onUpdateCoupleSettings={handleUpdateCoupleSettings}
-            onUpdateCategoryBudgets={handleUpdateCategoryBudgets}
-            onExportBackup={handleExportBackup}
-            onImportBackup={handleImportBackup}
-            onResetToDemo={handleResetToDemo}
-            onClearAllData={handleClearAllData}
-            supabaseConfig={supabaseConfig}
-            cloudSyncStatus={cloudSyncStatus}
-            onSaveSupabaseConfig={handleSaveSupabaseConfig}
-            onPushToCloud={handlePushToCloud}
-            onPullFromCloud={handlePullFromCloud}
-            onInstallPwa={handleInstallPwa}
-          />
-        )}
+          {activeRoute === 'settings' && (
+            <SettingsView
+              state={state}
+              onUpdateCoupleSettings={handleUpdateCoupleSettings}
+              onUpdateCategoryBudgets={handleUpdateCategoryBudgets}
+              onExportBackup={handleExportBackup}
+              onImportBackup={handleImportBackup}
+              onResetToDemo={handleResetToDemo}
+              onClearAllData={handleClearAllData}
+              supabaseConfig={supabaseConfig}
+              cloudSyncStatus={cloudSyncStatus}
+              onSaveSupabaseConfig={handleSaveSupabaseConfig}
+              onPushToCloud={handlePushToCloud}
+              onPullFromCloud={handlePullFromCloud}
+              onInstallPwa={handleInstallPwa}
+            />
+          )}
         </Suspense>
       </main>
 
@@ -2095,19 +2150,18 @@ export default function App() {
             <div className="modal-header">
               <h3>
                 <i
-                  className={`fa-solid ${
-                    txModal.editingId
+                  className={`fa-solid ${txModal.editingId
                       ? 'fa-pen-to-square text-emerald'
                       : txForm.type === 'income'
-                      ? 'fa-arrow-trend-up text-emerald'
-                      : 'fa-credit-card'
-                  }`}
+                        ? 'fa-arrow-trend-up text-emerald'
+                        : 'fa-credit-card'
+                    }`}
                 ></i>{' '}
                 {txModal.editingId
                   ? 'Editar Lançamento Existente'
                   : txForm.type === 'income'
-                  ? 'Nova Receita / Entrada no Mês'
-                  : 'Cadastrar Gasto (Cartão de Crédito / Pix)'}
+                    ? 'Nova Receita / Entrada no Mês'
+                    : 'Cadastrar Gasto (Cartão de Crédito / Pix)'}
               </h3>
               <button
                 className="close-btn"
@@ -2285,7 +2339,76 @@ export default function App() {
                 </>
               )}
 
-              {/* CATEGORIA E STATUS */}
+                  {txForm.paymentMethod === 'Cartão de Crédito' && (
+                    <div
+                      style={{
+                        background: 'var(--bg-subtle)',
+                        border: '1px dashed var(--border-color)',
+                        borderRadius: '10px',
+                        padding: '10px 12px',
+                        marginBottom: '12px'
+                      }}
+                    >
+                      <label className="checkbox-inline" htmlFor="tx-cdi-reserve">
+                        <input
+                          id="tx-cdi-reserve"
+                          type="checkbox"
+                          checked={Boolean(txForm.alreadyFundedInCdi)}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            const txYm = (txForm.dueDate || state.selectedMonth).slice(0, 7);
+                            setTxForm((prev) => ({
+                              ...prev,
+                              alreadyFundedInCdi: checked,
+                              fundedMonth: checked
+                                ? prev.fundedMonth || shiftYearMonth(txYm, -1)
+                                : ''
+                            }));
+                          }}
+                        />
+                        <span>
+                          <strong>💰 Dinheiro já separado no CDI p/ esta fatura</strong>
+                        </span>
+                      </label>
+                      {txForm.alreadyFundedInCdi && (
+                        <div className="form-group" style={{ marginTop: '8px', marginBottom: 0 }}>
+                          <label htmlFor="tx-funded-month" style={{ fontSize: '12px' }}>
+                            De qual orçamento saiu o dinheiro guardado?
+                          </label>
+                          <select
+                            id="tx-funded-month"
+                            value={
+                              txForm.fundedMonth ||
+                              shiftYearMonth((txForm.dueDate || state.selectedMonth).slice(0, 7), -1)
+                            }
+                            onChange={(e) =>
+                              setTxForm((prev) => ({ ...prev, fundedMonth: e.target.value }))
+                            }
+                          >
+                            {(() => {
+                              const invoiceYm = (txForm.dueDate || state.selectedMonth).slice(0, 7);
+                              const prevYm = shiftYearMonth(invoiceYm, -1);
+                              return (
+                                <>
+                                  <option value={prevYm}>
+                                    Guardado em {getMonthLabel(prevYm)} (Não descontar do salário de {getMonthLabel(invoiceYm)})
+                                  </option>
+                                  <option value="prior-reserve">
+                                    Reserva anterior já existente (Não descontar de nenhum salário mensal)
+                                  </option>
+                                  <option value={invoiceYm}>
+                                    Separado do salário do próprio mês ({getMonthLabel(invoiceYm)})
+                                  </option>
+                                </>
+                              );
+                            })()}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CATEGORIA E STATUS */}
               <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="tx-cat">Categoria</label>
@@ -2315,8 +2438,8 @@ export default function App() {
                       {txForm.type === 'income'
                         ? '⏳ A Receber'
                         : txForm.paymentMethod === 'Cartão de Crédito'
-                        ? '💳 Na Fatura do Mês (A Pagar)'
-                        : '⏳ Pendente (A Pagar)'}
+                          ? '💳 Na Fatura do Mês (A Pagar)'
+                          : '⏳ Pendente (A Pagar)'}
                     </option>
                     <option value="paid">
                       {txForm.type === 'income' ? '✅ Já Recebido' : '✅ Já Pago / Fatura Quitada'}
@@ -2328,11 +2451,10 @@ export default function App() {
               {/* DIVISÃO DO GASTO / RECEITA */}
               <div className="form-grid-2">
                 <div
-                  className={`form-group ${
-                    txForm.paymentMethod !== 'Cartão de Crédito' || txForm.type === 'income'
+                  className={`form-group ${txForm.paymentMethod !== 'Cartão de Crédito' || txForm.type === 'income'
                       ? 'grid-col-full'
                       : ''
-                  }`}
+                    }`}
                 >
                   <label htmlFor="tx-owner">
                     {txForm.type === 'income' ? 'Quem recebeu a receita? *' : 'Divisão da Despesa'}
@@ -2525,23 +2647,23 @@ export default function App() {
                 const monthExtras = (state.extraIncomes || []).filter((i) => i.date?.startsWith(ym));
                 const p1Extra = state.couple.includeExtraInTithe
                   ? monthExtras
-                      .filter(
-                        (i) =>
-                          i.owner === 'partner1' &&
-                          i.status === 'received' &&
-                          i.applyTitheAndOffering !== false
-                      )
-                      .reduce((a, i) => a + Number(i.amount || 0), 0)
+                    .filter(
+                      (i) =>
+                        i.owner === 'partner1' &&
+                        i.status === 'received' &&
+                        i.applyTitheAndOffering !== false
+                    )
+                    .reduce((a, i) => a + Number(i.amount || 0), 0)
                   : 0;
                 const p2Extra = state.couple.includeExtraInTithe
                   ? monthExtras
-                      .filter(
-                        (i) =>
-                          i.owner === 'partner2' &&
-                          i.status === 'received' &&
-                          i.applyTitheAndOffering !== false
-                      )
-                      .reduce((a, i) => a + Number(i.amount || 0), 0)
+                    .filter(
+                      (i) =>
+                        i.owner === 'partner2' &&
+                        i.status === 'received' &&
+                        i.applyTitheAndOffering !== false
+                    )
+                    .reduce((a, i) => a + Number(i.amount || 0), 0)
                   : 0;
                 const totalExtraM = p1Extra + p2Extra;
 

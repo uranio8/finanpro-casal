@@ -2,8 +2,38 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSafeDueDate,
   getMonthlyExtraNetSummary,
+  getMonthlyCdiReserveSummary,
   syncMonthIncomeAndTitheTransactions
 } from './formatters';
+
+describe('getMonthlyCdiReserveSummary', () => {
+  it('deducts CDI reserve in purchase month and covers invoice month without going negative', () => {
+    const txs = [
+      {
+        id: 'tx-card-1',
+        type: 'expense',
+        title: 'Compra Novembro p/ Fatura Dezembro',
+        amount: 500,
+        dueDate: '2026-12-15',
+        owner: 'joint',
+        paymentMethod: 'Cartão de Crédito',
+        alreadyFundedInCdi: true,
+        fundedMonth: '2026-11'
+      }
+    ];
+
+    const nov = getMonthlyCdiReserveSummary(txs, '2026-11');
+    expect(nov.provisionedForFutureInvoices).toBe(500);
+    expect(nov.coveredFromPriorReserve).toBe(0);
+    expect(nov.netBudgetDelta).toBe(-500);
+
+    const dec = getMonthlyCdiReserveSummary(txs, '2026-12');
+    expect(dec.monthInvoiceFunded).toBe(500);
+    expect(dec.coveredFromPriorReserve).toBe(500);
+    expect(dec.provisionedForFutureInvoices).toBe(0);
+    expect(dec.netBudgetDelta).toBe(500);
+  });
+});
 
 describe('buildSafeDueDate', () => {
   it('clamps day 31 to 28 in non-leap February and 29 in leap February', () => {
@@ -125,3 +155,4 @@ describe('syncMonthIncomeAndTitheTransactions', () => {
     expect(txs).toHaveLength(0);
   });
 });
+

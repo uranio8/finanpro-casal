@@ -6,6 +6,49 @@ export function formatCurrency(value) {
   });
 }
 
+export function getMonthlyCdiReserveSummary(transactions = [], ym, ownerFilter = 'all') {
+  const matchesOwner = (t) => {
+    if (!t || t.type !== 'expense') return false;
+    if (ownerFilter === 'partner1') return t.owner === 'partner1';
+    if (ownerFilter === 'partner2') return t.owner === 'partner2';
+    if (ownerFilter === 'joint') return t.owner === 'joint';
+    return true;
+  };
+
+  let monthInvoiceFunded = 0;
+  let coveredFromPriorReserve = 0;
+  let provisionedForFutureInvoices = 0;
+
+  (transactions || []).forEach((t) => {
+    if (!matchesOwner(t) || !t.alreadyFundedInCdi) return;
+    const amt = Number(t.amount || 0);
+    if (amt <= 0) return;
+    const isDueInYm = Boolean(t.dueDate && t.dueDate.startsWith(ym));
+    const fundedYm = t.fundedMonth || '';
+
+    if (isDueInYm) {
+      monthInvoiceFunded += amt;
+      if (!fundedYm || fundedYm !== ym) {
+        coveredFromPriorReserve += amt;
+      }
+    } else if (fundedYm === ym) {
+      provisionedForFutureInvoices += amt;
+    }
+  });
+
+  const cleanInvoiceFunded = Number(monthInvoiceFunded.toFixed(2));
+  const cleanCovered = Number(coveredFromPriorReserve.toFixed(2));
+  const cleanProvisioned = Number(provisionedForFutureInvoices.toFixed(2));
+  const netBudgetDelta = Number((cleanCovered - cleanProvisioned).toFixed(2));
+
+  return {
+    monthInvoiceFunded: cleanInvoiceFunded,
+    coveredFromPriorReserve: cleanCovered,
+    provisionedForFutureInvoices: cleanProvisioned,
+    netBudgetDelta
+  };
+}
+
 export function formatDateBR(dateStr) {
   if (!dateStr) return '-';
   const parts = String(dateStr).split('-');

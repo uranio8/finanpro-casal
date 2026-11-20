@@ -12,7 +12,9 @@ export default function CardsView({
   onUpdateCard,
   onDeleteCard,
   onPayFullCardInvoice,
-  onOpenNewTransactionWithCard
+  onOpenNewTransactionWithCard,
+  onToggleTransactionCdiReserve,
+  onFundAllCardInvoiceInCdi
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCardId, setEditingCardId] = useState(null);
@@ -102,6 +104,18 @@ export default function CardsView({
         .filter((t) => t.status === 'pending')
         .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
+      const monthInvoiceFunded = monthInvoiceTxs
+        .filter((t) => t.alreadyFundedInCdi || t.status === 'paid')
+        .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+      const monthInvoiceUnfunded = Math.max(
+        0,
+        Number((monthInvoiceTotal - monthInvoiceFunded).toFixed(2))
+      );
+      const fundedPct =
+        monthInvoiceTotal > 0
+          ? Math.min(100, Math.round((monthInvoiceFunded / monthInvoiceTotal) * 100))
+          : 100;
+
       // Total credit limit blocked by all pending installments across all months
       const totalUsedLimit = allCardTxs
         .filter((t) => t.status === 'pending')
@@ -120,6 +134,9 @@ export default function CardsView({
         monthInvoiceTxs,
         monthInvoiceTotal,
         monthInvoicePending,
+        monthInvoiceFunded,
+        monthInvoiceUnfunded,
+        fundedPct,
         totalUsedLimit,
         availableLimit,
         usagePct,
@@ -134,6 +151,8 @@ export default function CardsView({
   );
 
   const totalInvoicesMonth = enrichedCards.reduce((acc, c) => acc + c.monthInvoiceTotal, 0);
+  const totalFundedMonth = enrichedCards.reduce((acc, c) => acc + c.monthInvoiceFunded, 0);
+  const totalUnfundedMonth = Math.max(0, Number((totalInvoicesMonth - totalFundedMonth).toFixed(2)));
   const totalAvailableAllCards = enrichedCards.reduce((acc, c) => acc + c.availableLimit, 0);
 
   const handleSubmit = (e) => {
@@ -182,7 +201,10 @@ export default function CardsView({
         <div className="card mini-kpi">
           <span>Soma das Faturas em {getMonthLabel(selectedMonth)}</span>
           <strong>{formatCurrency(totalInvoicesMonth)}</strong>
-          <small>Total concentrado nos cartões neste mês</small>
+          <small>
+            Guardado no CDI: <strong className="text-emerald">{formatCurrency(totalFundedMonth)}</strong> · Falta separar:{' '}
+            <strong className="text-amber">{formatCurrency(totalUnfundedMonth)}</strong>
+          </small>
         </div>
         <div className="card mini-kpi">
           <span>Limite Disponível Somado</span>
@@ -260,6 +282,53 @@ export default function CardsView({
                     <span className="status-tag paid">Fatura Quitada</span>
                   )}
                 </div>
+              </div>
+
+              <div
+                style={{
+                  background: 'var(--bg-subtle)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '10px',
+                  padding: '10px 12px',
+                  marginBottom: '10px'
+                }}
+              >
+                <div className="flex-between wrap" style={{ gap: '6px', marginBottom: '6px' }}>
+                  <small style={{ fontWeight: 600 }}>
+                    <i className="fa-solid fa-piggy-bank text-emerald"></i> Reserva CDI desta Fatura:{' '}
+                    <strong className="text-emerald">{formatCurrency(card.monthInvoiceFunded)}</strong> ({card.fundedPct}%)
+                  </small>
+                  <small>
+                    {card.monthInvoiceUnfunded > 0 ? (
+                      <>
+                        Falta guardar: <strong className="text-amber">{formatCurrency(card.monthInvoiceUnfunded)}</strong>
+                      </>
+                    ) : (
+                      <strong className="text-emerald">100% Guardado no CDI!</strong>
+                    )}
+                  </small>
+                </div>
+                <div className="progress-bar-track sm">
+                  <div
+                    className="progress-bar-fill"
+                    style={{
+                      width: `${card.fundedPct}%`,
+                      backgroundColor: '#10b981'
+                    }}
+                  />
+                </div>
+                {card.monthInvoiceUnfunded > 0 && onFundAllCardInvoiceInCdi && (
+                  <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="btn-link"
+                      style={{ fontSize: '11.5px' }}
+                      onClick={() => onFundAllCardInvoiceInCdi(card.id, selectedMonth)}
+                    >
+                      <i className="fa-solid fa-coins"></i> Marcar fatura inteira como já guardada no CDI
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="cc-limit-bar-wrap">
@@ -371,6 +440,16 @@ export default function CardsView({
                   <div style={{ fontSize: '22px', fontWeight: 800 }}>
                     {formatCurrency(selectedCardInvoice.monthInvoiceTotal)}
                   </div>
+                  <small>
+                    Guardado no CDI:{' '}
+                    <strong className="text-emerald">
+                      {formatCurrency(selectedCardInvoice.monthInvoiceFunded)}
+                    </strong>{' '}
+                    · Falta guardar:{' '}
+                    <strong className="text-amber">
+                      {formatCurrency(selectedCardInvoice.monthInvoiceUnfunded)}
+                    </strong>
+                  </small>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <small style={{ color: 'var(--text-muted)' }}>Vencimento da Fatura:</small>
@@ -394,6 +473,7 @@ export default function CardsView({
                         <th className="text-center">Parcela</th>
                         <th className="text-center">Divisão</th>
                         <th className="text-center">Valor</th>
+                        <th className="text-center">Caixinha CDI</th>
                         <th className="text-center">Status</th>
                       </tr>
                     </thead>
@@ -420,6 +500,20 @@ export default function CardsView({
                           </td>
                           <td className="text-center">
                             <strong className="font-mono-val">{formatCurrency(t.amount)}</strong>
+                          </td>
+                          <td className="text-center">
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${t.alreadyFundedInCdi ? 'btn-soft' : 'btn-outline'}`}
+                              style={{ padding: '4px 8px', fontSize: '11.5px' }}
+                              title="Clique para marcar/desmarcar que o dinheiro desta compra já foi separado no CDI"
+                              onClick={() =>
+                                onToggleTransactionCdiReserve && onToggleTransactionCdiReserve(t.id)
+                              }
+                            >
+                              <i className={`fa-solid ${t.alreadyFundedInCdi ? 'fa-piggy-bank text-emerald' : 'fa-coins'}`}></i>{' '}
+                              {t.alreadyFundedInCdi ? 'Guardado CDI' : 'Separar CDI'}
+                            </button>
                           </td>
                           <td className="text-center">
                             <span className={`status-tag ${t.status}`}>
