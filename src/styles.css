@@ -509,7 +509,7 @@ body {
 /* KPI GRID */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
   gap: 14px;
 }
 
@@ -2381,6 +2381,7 @@ td.text-center .row-actions {
 .tithe-banner-card {
   border-left: 5px solid var(--primary);
   background: linear-gradient(135deg, var(--bg-card) 65%, var(--primary-soft));
+  padding: 14px 18px;
 }
 
 .tithe-banner-left {

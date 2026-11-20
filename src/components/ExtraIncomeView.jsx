@@ -324,17 +324,18 @@ export default function ExtraIncomeView({
         </div>
       </div>
 
-      {/* KPIs DE RENDA EXTRA DO MÊS */}
+      {/* 4 KPIs ESSENCIAIS DE RENDA EXTRA DO MÊS */}
       <div className="kpi-grid">
         <div className="kpi-card card">
           <div className="kpi-icon emerald">
             <i className="fa-solid fa-sack-dollar"></i>
           </div>
           <div className="kpi-info">
-            <span className="kpi-label">Total Renda Extra no Mês</span>
+            <span className="kpi-label">Total Líquido (Após Gasolina)</span>
             <strong className="kpi-value">{formatCurrency(metrics.totalGross)}</strong>
             <span className="kpi-sub">
-              Líquido livre: <strong>{formatCurrency(metrics.totalNet)}</strong>
+              Líquido após dízimo: <strong>{formatCurrency(metrics.totalNet)}</strong>
+              {metrics.totalFuelCost > 0 && ` · Gas.: -${formatCurrency(metrics.totalFuelCost)}`}
             </span>
           </div>
         </div>
@@ -344,24 +345,13 @@ export default function ExtraIncomeView({
             <i className="fa-solid fa-circle-check"></i>
           </div>
           <div className="kpi-info">
-            <span className="kpi-label">Já Recebido (No Bolso)</span>
+            <span className="kpi-label">Recebido vs. A Receber</span>
             <strong className="kpi-value text-emerald">
               {formatCurrency(metrics.totalReceived)}
             </strong>
-            <span className="kpi-sub">Aulas e vendas já pagas</span>
-          </div>
-        </div>
-
-        <div className="kpi-card card">
-          <div className="kpi-icon amber">
-            <i className="fa-solid fa-clock"></i>
-          </div>
-          <div className="kpi-info">
-            <span className="kpi-label">Falta Receber (Previsto)</span>
-            <strong className="kpi-value text-amber">
-              {formatCurrency(metrics.totalPending)}
-            </strong>
-            <span className="kpi-sub">Agendado / pendente de clientes</span>
+            <span className="kpi-sub">
+              Falta receber: <strong className="text-amber">{formatCurrency(metrics.totalPending)}</strong>
+            </span>
           </div>
         </div>
 
@@ -370,25 +360,12 @@ export default function ExtraIncomeView({
             <i className="fa-solid fa-chalkboard-user"></i>
           </div>
           <div className="kpi-info">
-            <span className="kpi-label">Ganhos com Aulas</span>
+            <span className="kpi-label">Produção (Aulas &amp; Extras)</span>
             <strong className="kpi-value">{formatCurrency(metrics.totalClassesAmount)}</strong>
             <span className="kpi-sub">
-              <strong>{metrics.totalClassHours}h</strong> de aulas no mês
-              {metrics.totalFuelCost > 0 && (
-                <> · Gasolina: -{formatCurrency(metrics.totalFuelCost)}</>
-              )}
+              <strong>{metrics.totalClassHours}h</strong> aulas
+              {metrics.salesCount > 0 && ` · ${metrics.salesCount} vendas (${formatCurrency(metrics.totalSalesAmount)})`}
             </span>
-          </div>
-        </div>
-
-        <div className="kpi-card card">
-          <div className="kpi-icon purple">
-            <i className="fa-solid fa-bag-shopping"></i>
-          </div>
-          <div className="kpi-info">
-            <span className="kpi-label">Ganhos com Vendas &amp; Extras</span>
-            <strong className="kpi-value">{formatCurrency(metrics.totalSalesAmount)}</strong>
-            <span className="kpi-sub">{metrics.salesCount} vendas/serviços no mês</span>
           </div>
         </div>
 
@@ -397,7 +374,7 @@ export default function ExtraIncomeView({
             <i className="fa-solid fa-hands-praying"></i>
           </div>
           <div className="kpi-info">
-            <span className="kpi-label">Dízimo + Oferta (Renda Extra)</span>
+            <span className="kpi-label">Dízimo + Oferta (sobre Líquido)</span>
             <strong className="kpi-value">
               {formatCurrency(metrics.totalConsecrated)}
             </strong>

@@ -378,81 +378,37 @@ export default function DashboardView({
             </div>
           </div>
         </div>
-        <div className="hero-actions">
-          {onOpenMonthIncomeModal && (
-            <button
-              className="btn btn-outline"
-              title="Informar quanto você e seu cônjuge receberam especificamente neste mês"
-              onClick={onOpenMonthIncomeModal}
-            >
-              <i className="fa-solid fa-money-bill-wave text-emerald"></i> Renda de {getMonthLabel(selectedMonth).split(' ')[0]}
-            </button>
-          )}
-          <button
-            className="btn btn-primary"
-            onClick={() => onOpenNewTransaction('expense')}
-          >
-            <i className="fa-solid fa-plus"></i> Nova Despesa
-          </button>
-          <button
-            className="btn btn-outline"
-            onClick={() => onNavigate('extra-income')}
-          >
-            <i className="fa-solid fa-chalkboard-user"></i> Aulas &amp; Renda Extra
-          </button>
-          <button
-            className="btn btn-soft"
-            onClick={() => onOpenCommitmentModal()}
-          >
-            <i className="fa-solid fa-file-invoice-dollar"></i> Novo Parcelamento
-          </button>
-        </div>
       </div>
 
-      {/* PAINEL DE FIDELIDADE: DÍZIMO (10%) & OFERTAS DO CASAL */}
+      {/* PAINEL COMPACTO DE FIDELIDADE: DÍZIMO (10%) & OFERTAS DO CASAL */}
       {couple.titheEnabled && (
         <div className="card tithe-banner-card">
-          <div className="flex-between wrap">
+          <div className="flex-between wrap" style={{ gap: '12px' }}>
             <div className="tithe-banner-left">
-              <div className="tithe-icon-circle">
+              <div className="tithe-icon-circle" style={{ width: '42px', height: '42px', fontSize: '18px' }}>
                 <i className="fa-solid fa-hands-praying"></i>
               </div>
               <div>
-                <span className="badge-pill badge-emerald">
-                  Primícias &amp; Fidelidade — Dízimo (10%) + Oferta Mensal
-                </span>
-                <h4>
-                  Total Consagrado em {getMonthLabel(selectedMonth)}:{' '}
+                <h4 style={{ margin: 0, fontSize: '15px' }}>
+                  Primícias de {getMonthLabel(selectedMonth)}:{' '}
                   <span className="text-emerald">{formatCurrency(titheSummary.grandTotal)}</span>
                 </h4>
                 <small>
-                  Dízimo (10%): <strong>{formatCurrency(titheSummary.totalTithe)}</strong> · Ofertas
-                  ({titheSummary.p1OffPct}% / {titheSummary.p2OffPct}%):{' '}
-                  <strong>{formatCurrency(titheSummary.totalOffering)}</strong>{' '}
-                  {couple.includeExtraInTithe ? '(inclui Salários + Renda Extra)' : '(apenas Salários)'}
+                  Dízimo (10%): <strong>{formatCurrency(titheSummary.totalTithe)}</strong> · Ofertas:{' '}
+                  <strong>{formatCurrency(titheSummary.totalOffering)}</strong>
                 </small>
               </div>
             </div>
 
             <div className="tithe-partner-pills">
               <div className="tithe-mini-box">
-                <small>
-                  {couple.partner1Name} (10% + {titheSummary.p1OffPct}%)
-                </small>
+                <small>{couple.partner1Name}</small>
                 <strong>{formatCurrency(titheSummary.p1Total)}</strong>
               </div>
               <div className="tithe-mini-box">
-                <small>
-                  {couple.partner2Name} (10% + {titheSummary.p2OffPct}%)
-                </small>
+                <small>{couple.partner2Name}</small>
                 <strong>{formatCurrency(titheSummary.p2Total)}</strong>
               </div>
-              <button
-                className="btn btn-sm btn-outline"
-                onClick={() => onNavigate('settings')}
-              >
-                <i className="fa-solid fa-Sliders"></i> Ajustar % Oferta
-              </button>
             </div>
           </div>
         </div>
@@ -519,33 +475,12 @@ export default function DashboardView({
             <i className="fa-solid fa-file-invoice"></i>
           </div>
           <div className="kpi-info">
-            <span className="kpi-label">Total de Contas do Mês</span>
+            <span className="kpi-label">Despesas do Mês</span>
             <strong className="kpi-value">{formatCurrency(totalExpense)}</strong>
             <span className="kpi-sub">
-              Teto orçado: {formatCurrency(totalBudgetCeiling)}
+              Pago: <strong className="text-emerald">{formatCurrency(totalPaidExpense)}</strong> · Falta:{' '}
+              <strong className="text-amber">{formatCurrency(totalPendingExpense)}</strong>
             </span>
-          </div>
-        </div>
-
-        <div className="kpi-card card">
-          <div className="kpi-icon teal">
-            <i className="fa-solid fa-circle-check"></i>
-          </div>
-          <div className="kpi-info">
-            <span className="kpi-label">Já Pago</span>
-            <strong className="kpi-value text-emerald">{formatCurrency(totalPaidExpense)}</strong>
-            <span className="kpi-sub">{paidPercentage}% das contas quitadas</span>
-          </div>
-        </div>
-
-        <div className="kpi-card card">
-          <div className="kpi-icon amber">
-            <i className="fa-solid fa-clock"></i>
-          </div>
-          <div className="kpi-info">
-            <span className="kpi-label">Restante (A Pagar)</span>
-            <strong className="kpi-value text-amber">{formatCurrency(totalPendingExpense)}</strong>
-            <span className="kpi-sub">{100 - paidPercentage}% pendente no mês</span>
           </div>
         </div>
 

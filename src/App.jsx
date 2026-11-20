@@ -1879,45 +1879,31 @@ export default function App() {
                 ></i>{' '}
                 <span>
                   {!isOnline
-                    ? 'Offline (salvo local)'
+                    ? 'Offline'
                     : cloudSyncStatus === 'syncing'
                     ? 'Sincronizando...'
                     : cloudSyncStatus === 'error'
                     ? 'Erro Nuvem'
-                    : 'Nuvem Ativa'}
+                    : 'Nuvem'}
                 </span>
               </button>
             )}
             <button
               className="btn btn-sm btn-outline"
               style={{ gap: '6px' }}
-              title="Gerar Relatório de Fechamento Mensal ou Anual em PDF / Impressão"
-              onClick={() => setIsReportModalOpen(true)}
-            >
-              <i className="fa-solid fa-file-pdf text-emerald"></i> Relatório PDF
-            </button>
-            <button
-              className="btn btn-sm btn-outline"
-              style={{ gap: '6px' }}
               title="Clique para definir quanto cada um recebeu neste mês específico"
               onClick={openMonthIncomeModal}
             >
-              <i className="fa-solid fa-money-bill-wave text-emerald"></i> Renda do Mês:{' '}
+              <i className="fa-solid fa-money-bill-wave text-emerald"></i> Renda:{' '}
               <strong className="text-emerald">
                 {formatCurrency(effectiveIncome.partner1Income + effectiveIncome.partner2Income)}
               </strong>
             </button>
             <button
-              className="btn btn-sm btn-soft"
-              onClick={() => setActiveRoute('extra-income')}
-            >
-              <i className="fa-solid fa-chalkboard-user text-emerald"></i> + Aula / Venda
-            </button>
-            <button
               className="btn btn-sm btn-primary"
               onClick={() => handleOpenNewTransaction('expense')}
             >
-              <i className="fa-solid fa-credit-card"></i> + Lançar Gasto
+              <i className="fa-solid fa-plus"></i> + Lançar
             </button>
           </div>
         </header>
@@ -2133,6 +2119,48 @@ export default function App() {
               </button>
             </div>
             <form onSubmit={handleSaveTransaction} className="modal-body">
+              {!txModal.editingId && (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '8px',
+                    marginBottom: '12px',
+                    background: 'var(--bg-subtle)',
+                    padding: '4px',
+                    borderRadius: '10px'
+                  }}
+                >
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${txForm.type === 'expense' ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ flex: 1, border: 'none' }}
+                    onClick={() =>
+                      setTxForm((prev) => ({
+                        ...prev,
+                        type: 'expense',
+                        category: CATEGORIES[0]?.id || 'moradia'
+                      }))
+                    }
+                  >
+                    <i className="fa-solid fa-arrow-trend-down"></i> Despesa / Gasto
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${txForm.type === 'income' ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ flex: 1, border: 'none' }}
+                    onClick={() =>
+                      setTxForm((prev) => ({
+                        ...prev,
+                        type: 'income',
+                        category: INCOME_CATEGORIES[0]?.id || 'salario',
+                        paymentMethod: 'PIX'
+                      }))
+                    }
+                  >
+                    <i className="fa-solid fa-arrow-trend-up"></i> Receita / Entrada
+                  </button>
+                </div>
+              )}
               <div className="form-group">
                 <label htmlFor="tx-title">Descrição da Compra ou Conta *</label>
                 <input

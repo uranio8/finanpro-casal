@@ -160,36 +160,36 @@ export default function TransactionsView({
             <strong>{getMonthLabel(selectedMonth)}</strong>. Clique em um dia do calendário para filtrar!
           </p>
         </div>
-        <div className="header-btns" style={{ flexWrap: 'wrap' }}>
+        <div className="header-btns" style={{ flexWrap: 'wrap', gap: '8px' }}>
           {onImportStatementTransactions && (
             <button
-              className="btn btn-outline"
+              className="btn btn-sm btn-outline"
               title="Importar fatura de cartão (.csv) ou extrato bancário (.ofx) com categorização automática"
               onClick={() => setIsImportModalOpen(true)}
             >
-              <i className="fa-solid fa-file-import text-emerald"></i> Importar Extrato (CSV/OFX)
+              <i className="fa-solid fa-file-import text-emerald"></i> Importar CSV/OFX
             </button>
           )}
           {onClonePreviousMonthFixedExpenses && (
             <button
-              className="btn btn-soft"
-              title="Copia automaticamente as contas fixas recorrentes (Luz, Água, Condomínio, Internet, etc.) do mês anterior para este mês como Pendentes"
+              className="btn btn-sm btn-soft"
+              title="Copia automaticamente as contas fixas recorrentes do mês anterior para este mês como Pendentes"
               onClick={onClonePreviousMonthFixedExpenses}
             >
-              <i className="fa-solid fa-wand-magic-sparkles text-emerald"></i> Clonar Fixas do Mês Anterior
+              <i className="fa-solid fa-wand-magic-sparkles text-emerald"></i> Clonar Fixas
             </button>
           )}
           <button
-            className="btn btn-outline"
+            className="btn btn-sm btn-outline"
             onClick={() => onOpenNewTransaction('income')}
           >
-            <i className="fa-solid fa-arrow-trend-up text-emerald"></i> + Nova Receita
+            <i className="fa-solid fa-arrow-trend-up text-emerald"></i> + Receita
           </button>
           <button
             className="btn btn-primary"
             onClick={() => onOpenNewTransaction('expense')}
           >
-            <i className="fa-solid fa-plus"></i> + Novo Gasto (Cartão / Pix)
+            <i className="fa-solid fa-plus"></i> + Novo Gasto
           </button>
         </div>
       </div>
