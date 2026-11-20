@@ -5,6 +5,7 @@ import {
   getMonthLabel,
   getMonthlyExtraNetSummary
 } from '../utils/formatters';
+import CurrencyInput from './CurrencyInput';
 
 const WEEKS = ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4', 'Semana 5'];
 
@@ -496,11 +497,8 @@ export default function ExtraIncomeView({
                       <i className="fa-solid fa-gas-pump"></i> Gasolina da semana (R$)
                     </label>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <input
+                      <CurrencyInput
                         id={fuelInputId}
-                        type="number"
-                        step="0.01"
-                        min="0"
                         placeholder="0,00"
                         value={w.weeklyFuel || ''}
                         onChange={(e) =>
@@ -898,12 +896,10 @@ export default function ExtraIncomeView({
                         ? 'Valor da Hora / Aula (R$) *'
                         : 'Valor Unitário (R$) *'}
                     </label>
-                    <input
+                    <CurrencyInput
                       id="ext-unit"
-                      type="number"
-                      step="0.01"
-                      min="0.01"
                       required
+                      placeholder="90,00"
                       value={form.unitPrice}
                       onChange={(e) => setForm({ ...form, unitPrice: e.target.value })}
                     />
@@ -911,11 +907,8 @@ export default function ExtraIncomeView({
 
                   <div className="form-group">
                     <label htmlFor="ext-fuel-cost">Desconto Gasolina / Abastecimento (R$)</label>
-                    <input
+                    <CurrencyInput
                       id="ext-fuel-cost"
-                      type="number"
-                      step="0.01"
-                      min="0"
                       placeholder="0,00"
                       value={form.fuelCost}
                       onChange={(e) => setForm({ ...form, fuelCost: e.target.value })}

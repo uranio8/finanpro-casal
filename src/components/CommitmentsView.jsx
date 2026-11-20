@@ -9,6 +9,7 @@ import {
   addMonthsToDate,
   buildSafeDueDate
 } from '../utils/formatters';
+import CurrencyInput from './CurrencyInput';
 
 export default function CommitmentsView({
   state,
@@ -551,11 +552,9 @@ export default function CommitmentsView({
             </div>
             <div className="form-group">
               <label htmlFor="sim-amount">Valor Total da Compra (R$)</label>
-              <input
+              <CurrencyInput
                 id="sim-amount"
-                type="number"
-                min="1"
-                step="10"
+                placeholder="1.500,00"
                 value={simForm.totalAmount}
                 onChange={(e) => setSimForm({ ...simForm, totalAmount: e.target.value })}
               />
@@ -1022,13 +1021,10 @@ export default function CommitmentsView({
                       ? 'Valor Mensal da Conta Fixa (R$) *'
                       : 'Valor Total da Compra / Compromisso (R$) *'}
                   </label>
-                  <input
+                  <CurrencyInput
                     id="comm-total"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
                     required
-                    placeholder={form.type === 'recurring' ? 'Ex: 200.00 (por mês)' : 'Ex: 2400.00 (total)'}
+                    placeholder={form.type === 'recurring' ? '200,00' : '2.400,00'}
                     value={form.totalAmount}
                     onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
                   />
@@ -1079,12 +1075,9 @@ export default function CommitmentsView({
                   {form.type !== 'recurring' && form.hasDownPayment && (
                     <div className="form-group">
                       <label htmlFor="comm-down">Valor de Entrada (R$)</label>
-                      <input
+                      <CurrencyInput
                         id="comm-down"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Ex: 500.00"
+                        placeholder="500,00"
                         value={form.downPayment}
                         onChange={(e) => setForm({ ...form, downPayment: e.target.value })}
                       />
@@ -1270,12 +1263,9 @@ export default function CommitmentsView({
                       </div>
                       <div className="form-group">
                         <label htmlFor="ant-disc">Desconto Obtido no App do Banco (R$)</label>
-                        <input
+                        <CurrencyInput
                           id="ant-disc"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="Ex: 45.00"
+                          placeholder="45,00"
                           value={anticipateDiscount}
                           onChange={(e) => setAnticipateDiscount(e.target.value)}
                         />
@@ -1477,11 +1467,8 @@ export default function CommitmentsView({
                   <label htmlFor="edit-comm-pending-val">
                     Valor das {editingComm.pendingCount} Parcelas Pendentes Futuras (R$)
                   </label>
-                  <input
+                  <CurrencyInput
                     id="edit-comm-pending-val"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
                     value={editingComm.pendingInstallmentAmount}
                     onChange={(e) =>
                       setEditingComm({

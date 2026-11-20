@@ -6,6 +6,45 @@ export function formatCurrency(value) {
   });
 }
 
+export function formatCurrencyInput(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  return num.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+export function parseCurrencyInput(rawText) {
+  const digits = String(rawText ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  const cents = parseInt(digits, 10);
+  if (!Number.isFinite(cents) || cents <= 0) return '';
+  return Number((cents / 100).toFixed(2));
+}
+
+export function generateInstallmentSchedule(totalAmount, installmentsCount, firstDueDateStr) {
+  const total = Number(totalAmount) || 0;
+  const count = Math.max(1, parseInt(installmentsCount, 10) || 1);
+  const startStr = firstDueDateStr || '2026-11-15';
+  const baseVal = Math.floor((total / count) * 100) / 100;
+  const items = [];
+  let sumPrev = 0;
+
+  for (let i = 1; i <= count; i++) {
+    const isLast = i === count;
+    const amt = isLast ? Number((total - sumPrev).toFixed(2)) : baseVal;
+    if (!isLast) sumPrev = Number((sumPrev + amt).toFixed(2));
+    items.push({
+      number: i,
+      amount: amt,
+      dueDate: addMonthsToDate(startStr, i - 1)
+    });
+  }
+  return items;
+}
+
 export function getMonthlyCdiReserveSummary(transactions = [], ym, ownerFilter = 'all') {
   const matchesOwner = (t) => {
     if (!t || t.type !== 'expense') return false;

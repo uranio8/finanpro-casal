@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { formatCurrency, formatDateBR, shiftYearMonth, getMonthLabel } from '../utils/formatters';
+import CurrencyInput from './CurrencyInput';
 
 export default function GoalsAndChecklistView({
   state,
@@ -504,13 +505,10 @@ export default function GoalsAndChecklistView({
             <form onSubmit={handleDepositSubmit} className="modal-body">
               <div className="form-group">
                 <label htmlFor="dep-amount">Quanto você quer guardar agora? (R$) *</label>
-                <input
+                <CurrencyInput
                   id="dep-amount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
                   required
-                  placeholder="Ex: 500.00"
+                  placeholder="500,00"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
                   autoFocus
@@ -595,25 +593,19 @@ export default function GoalsAndChecklistView({
               <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="g-target">Valor da Meta (R$) *</label>
-                  <input
+                  <CurrencyInput
                     id="g-target"
-                    type="number"
-                    step="0.01"
-                    min="1"
                     required
-                    placeholder="Ex: 10000"
+                    placeholder="10.000,00"
                     value={goalForm.targetAmount}
                     onChange={(e) => setGoalForm({ ...goalForm, targetAmount: e.target.value })}
                   />
                 </div>
                 <div className="form-group">
                   <label htmlFor="g-curr">Valor Já Guardado (R$)</label>
-                  <input
+                  <CurrencyInput
                     id="g-curr"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="Ex: 1500"
+                    placeholder="1.500,00"
                     value={goalForm.currentAmount}
                     onChange={(e) => setGoalForm({ ...goalForm, currentAmount: e.target.value })}
                   />

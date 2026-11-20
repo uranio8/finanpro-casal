@@ -5,6 +5,7 @@ import {
   getMonthLabel,
   buildSafeDueDate
 } from '../utils/formatters';
+import CurrencyInput from './CurrencyInput';
 
 export default function CardsView({
   state,
@@ -567,13 +568,10 @@ export default function CardsView({
                 </div>
                 <div className="form-group">
                   <label htmlFor="card-limit">Limite Total (R$) *</label>
-                  <input
+                  <CurrencyInput
                     id="card-limit"
-                    type="number"
-                    step="0.01"
-                    min="1"
                     required
-                    placeholder="Ex: 10000"
+                    placeholder="10.000,00"
                     value={form.limit}
                     onChange={(e) => setForm({ ...form, limit: e.target.value })}
                   />

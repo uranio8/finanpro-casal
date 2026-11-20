@@ -2,10 +2,32 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSafeDueDate,
   computeCardInvoiceDueDate,
+  formatCurrencyInput,
+  parseCurrencyInput,
+  generateInstallmentSchedule,
   getMonthlyExtraNetSummary,
   getMonthlyCdiReserveSummary,
   syncMonthIncomeAndTitheTransactions
 } from './formatters';
+
+describe('formatCurrencyInput & parseCurrencyInput', () => {
+  it('parses raw digit typing into decimal numbers without needing comma and formats back', () => {
+    expect(parseCurrencyInput('15000')).toBe(150);
+    expect(formatCurrencyInput(150)).toBe('150,00');
+    expect(parseCurrencyInput('125050')).toBe(1250.5);
+    expect(formatCurrencyInput(1250.5)).toBe('1.250,50');
+    expect(parseCurrencyInput('000')).toBe('');
+  });
+});
+
+describe('generateInstallmentSchedule', () => {
+  it('adjusts periodic decimal remainder on the last installment so sum equals totalAmount', () => {
+    const schedule = generateInstallmentSchedule(100, 3, '2026-11-15');
+    expect(schedule).toHaveLength(3);
+    expect(schedule.map((s) => s.amount)).toEqual([33.33, 33.33, 33.34]);
+    expect(schedule[2].dueDate).toBe('2027-01-15');
+  });
+});
 
 describe('computeCardInvoiceDueDate', () => {
   it('keeps invoice in same month before closing day and shifts to next month on/after closing day', () => {

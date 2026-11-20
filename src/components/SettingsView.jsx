@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CATEGORIES, THEMES } from '../data/initialState';
 import { formatCurrency } from '../utils/formatters';
+import CurrencyInput from './CurrencyInput';
 import { SUPABASE_SQL_SETUP, isSupabaseConfigured } from '../utils/supabaseSync';
 
 export default function SettingsView({
@@ -190,10 +191,8 @@ export default function SettingsView({
               </div>
               <div className="form-group">
                 <label htmlFor="p1-inc">Salário de {coupleForm.partner1Name} (R$)</label>
-                <input
+                <CurrencyInput
                   id="p1-inc"
-                  type="number"
-                  step="0.01"
                   value={coupleForm.partner1Income}
                   onChange={(e) =>
                     setCoupleForm({ ...coupleForm, partner1Income: e.target.value })
@@ -234,10 +233,8 @@ export default function SettingsView({
               </div>
               <div className="form-group">
                 <label htmlFor="p2-inc">Salário de {coupleForm.partner2Name} (R$)</label>
-                <input
+                <CurrencyInput
                   id="p2-inc"
-                  type="number"
-                  step="0.01"
                   value={coupleForm.partner2Income}
                   onChange={(e) =>
                     setCoupleForm({ ...coupleForm, partner2Income: e.target.value })
@@ -272,12 +269,9 @@ export default function SettingsView({
               <label htmlFor="don-amount">
                 <i className="fa-solid fa-hand-holding-heart text-emerald"></i> Doações Esporádicas / Especiais do Mês (R$) — Fora Dízimo e Oferta
               </label>
-              <input
+              <CurrencyInput
                 id="don-amount"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Ex: 200.00 (ajuda de custo a familiares, ação social ou caridade)"
+                placeholder="0,00"
                 value={coupleForm.donationAmount}
                 onChange={(e) =>
                   setCoupleForm({ ...coupleForm, donationAmount: e.target.value })
@@ -347,10 +341,8 @@ export default function SettingsView({
             <div className="form-grid-2">
               <div className="form-group">
                 <label htmlFor="sav-target">Meta Mensal de Poupança (R$)</label>
-                <input
+                <CurrencyInput
                   id="sav-target"
-                  type="number"
-                  step="0.01"
                   value={coupleForm.monthlySavingsTarget}
                   onChange={(e) =>
                     setCoupleForm({ ...coupleForm, monthlySavingsTarget: e.target.value })
@@ -478,11 +470,8 @@ export default function SettingsView({
                   <i className={`fa-solid ${cat.icon}`} style={{ color: cat.color }}></i>{' '}
                   {cat.name} (R$)
                 </label>
-                <input
+                <CurrencyInput
                   id={`bud-${cat.id}`}
-                  type="number"
-                  step="10"
-                  min="0"
                   value={budgetsForm[cat.id] ?? 0}
                   onChange={(e) =>
                     setBudgetsForm({ ...budgetsForm, [cat.id]: e.target.value })

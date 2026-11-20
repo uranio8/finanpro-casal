@@ -2,14 +2,17 @@ import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { INITIAL_STATE, CATEGORIES, INCOME_CATEGORIES } from './data/initialState';
 import {
   formatCurrency,
+  formatDateBR,
   getMonthLabel,
   shiftYearMonth,
   getEffectiveMonthIncome,
   buildSafeDueDate,
   computeCardInvoiceDueDate,
+  generateInstallmentSchedule,
   isAutoSalaryTransaction,
   syncMonthIncomeAndTitheTransactions
 } from './utils/formatters';
+import CurrencyInput from './components/CurrencyInput';
 import {
   getSupabaseConfig,
   saveSupabaseConfig,
@@ -413,6 +416,8 @@ export default function App() {
       cardId: isExpense ? chosenCard.id : '',
       alreadyFundedInCdi: false,
       fundedMonth: cardCalc.purchaseYm,
+      installmentMode: 'single',
+      installmentsCount: 2,
       propagateToPendingInstallments: false
     });
     setTxModal({ open: true, type, editingId: null, commitmentId: null });
@@ -437,6 +442,8 @@ export default function App() {
       fundedMonth:
         tx.fundedMonth ||
         shiftYearMonth((tx.dueDate || state.selectedMonth).slice(0, 7), -1),
+      installmentMode: 'single',
+      installmentsCount: 1,
       propagateToPendingInstallments: Boolean(tx.commitmentId)
     });
     setTxModal({
@@ -597,7 +604,81 @@ export default function App() {
       return;
     }
 
-    const { propagateToPendingInstallments, ...cleanForm } = txForm;
+    const {
+      propagateToPendingInstallments,
+      installmentMode,
+      installmentsCount,
+      ...cleanForm
+    } = txForm;
+
+    // Se o usuário selecionou "Parcelado" (2x a 48x) direto no modal de gasto, gera automaticamente o parcelamento para os próximos meses
+    const parsedCount = Math.max(1, parseInt(installmentsCount, 10) || 1);
+    if (
+      txForm.type === 'expense' &&
+      installmentMode === 'installment' &&
+      parsedCount > 1
+    ) {
+      const commId = `comm-${Date.now()}`;
+      const schedule = generateInstallmentSchedule(amountNum, parsedCount, txForm.dueDate);
+      const endDate = schedule[schedule.length - 1]?.dueDate || txForm.dueDate;
+      const nowIso = new Date().toISOString();
+      const newCommitment = {
+        id: commId,
+        title: txForm.title.trim(),
+        type: 'installment',
+        category: txForm.category,
+        totalAmount: amountNum,
+        downPayment: 0,
+        installmentsCount: parsedCount,
+        monthlyAmount: schedule[0]?.amount || amountNum,
+        startDate: txForm.dueDate,
+        endDate,
+        dueDay: Number((txForm.dueDate || '').split('-')[2]) || chosenCard?.dueDay || 15,
+        owner: txForm.owner,
+        paidBy: txForm.paidBy,
+        paymentMethod: txForm.paymentMethod,
+        cardId: effectiveCardId,
+        active: true,
+        updatedAt: nowIso
+      };
+
+      const generatedTxs = schedule.map((inst) => ({
+        id: `tx-${commId}-${inst.number}`,
+        commitmentId: commId,
+        title: txForm.title.trim(),
+        type: 'expense',
+        category: txForm.category,
+        amount: inst.amount,
+        purchaseDate: txForm.purchaseDate || txForm.dueDate,
+        dueDate: inst.dueDate,
+        paidDate: '',
+        status: 'pending',
+        owner: txForm.owner,
+        paidBy: txForm.paidBy,
+        paymentMethod: txForm.paymentMethod,
+        cardId: effectiveCardId,
+        installmentNumber: inst.number,
+        totalInstallments: parsedCount,
+        alreadyFundedInCdi: Boolean(txForm.alreadyFundedInCdi),
+        fundedMonth: txForm.alreadyFundedInCdi ? txForm.fundedMonth || '' : '',
+        updatedAt: nowIso
+      }));
+
+      setState((prev) => ({
+        ...prev,
+        commitments: [newCommitment, ...(prev.commitments || [])],
+        transactions: [...generatedTxs, ...(prev.transactions || [])]
+      }));
+
+      setTxModal({ open: false, type: 'expense', editingId: null, commitmentId: null });
+      showToast(
+        `Compra parcelada em ${parsedCount}x (${formatCurrency(
+          schedule[0]?.amount
+        )}/mês) lançada para os próximos meses! 💳✨`
+      );
+      return;
+    }
+
     const newTx = {
       id: `tx-${Date.now()}`,
       ...cleanForm,
@@ -2025,6 +2106,7 @@ export default function App() {
               onClonePreviousMonthFixedExpenses={handleClonePreviousMonthFixedExpenses}
               onImportStatementTransactions={handleImportStatementTransactions}
               onToggleTransactionStatus={handleToggleTransactionStatus}
+              onToggleTransactionCdiReserve={handleToggleTransactionCdiReserve}
               onDeleteTransaction={handleDeleteTransaction}
             />
           )}
@@ -2221,146 +2303,306 @@ export default function App() {
                   </button>
                 </div>
               )}
-              <div className="form-group">
-                <label htmlFor="tx-title">Descrição da Compra ou Conta *</label>
-                <input
-                  id="tx-title"
-                  type="text"
-                  required
-                  placeholder={
-                    txForm.type === 'income'
-                      ? 'Ex: Salário, Freelance, Dividendos...'
-                      : 'Ex: Supermercado, Combustível, Farmácia, Jantar...'
-                  }
-                  value={txForm.title}
-                  onChange={(e) => setTxForm({ ...txForm, title: e.target.value })}
-                />
-              </div>
-
-              {/* VALOR E DATAS (COMPRA + VENCIMENTO AUTOMÁTICO NO CARTÃO) */}
-              <div className={txForm.type === 'expense' && txForm.paymentMethod === 'Cartão de Crédito' ? 'form-grid-3' : 'form-grid-2'}>
-                <div className="form-group">
-                  <label htmlFor="tx-amount">Valor (R$) *</label>
+              {/* LINHA 1: DESCRIÇÃO + VALOR COM MÁSCARA AUTOMÁTICA */}
+              <div className="form-grid-2" style={{ alignItems: 'end', marginBottom: '10px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label htmlFor="tx-title">Descrição da Compra ou Conta *</label>
                   <input
-                    id="tx-amount"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
+                    id="tx-title"
+                    type="text"
                     required
-                    placeholder="Ex: 150.00"
+                    placeholder={
+                      txForm.type === 'income'
+                        ? 'Ex: Salário, Freelance...'
+                        : 'Ex: Supermercado, Farmácia, Jantar...'
+                    }
+                    value={txForm.title}
+                    onChange={(e) => setTxForm({ ...txForm, title: e.target.value })}
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label htmlFor="tx-amount">
+                    {txForm.installmentMode === 'installment' ? 'Valor Total da Compra (R$) *' : 'Valor (R$) *'}
+                  </label>
+                  <CurrencyInput
+                    id="tx-amount"
+                    required
+                    placeholder="0,00"
                     value={txForm.amount}
                     onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
-                  />
-                </div>
-                {txForm.type === 'expense' && txForm.paymentMethod === 'Cartão de Crédito' && (
-                  <div className="form-group">
-                    <label htmlFor="tx-purchase-date">Data da Compra *</label>
-                    <input
-                      id="tx-purchase-date"
-                      type="date"
-                      required
-                      value={txForm.purchaseDate || txForm.dueDate}
-                      onChange={(e) => {
-                        const newPurchaseDate = e.target.value;
-                        const chosen =
-                          state.cards.find((c) => c.id === txForm.cardId) || state.cards[0];
-                        const calc = computeCardInvoiceDueDate(newPurchaseDate, chosen);
-                        setTxForm((prev) => ({
-                          ...prev,
-                          purchaseDate: newPurchaseDate,
-                          dueDate: calc.dueDate,
-                          fundedMonth: calc.purchaseYm
-                        }));
-                      }}
-                    />
-                  </div>
-                )}
-                <div className="form-group">
-                  <label htmlFor="tx-date">
-                    {txForm.paymentMethod === 'Cartão de Crédito'
-                      ? 'Vencimento da Fatura (Automático) *'
-                      : 'Data de Vencimento *'}
-                  </label>
-                  <input
-                    id="tx-date"
-                    type="date"
-                    required
-                    value={txForm.dueDate}
-                    onChange={(e) => setTxForm({ ...txForm, dueDate: e.target.value })}
+                    style={{ fontWeight: 700, fontSize: '15px', color: 'var(--primary)' }}
                   />
                 </div>
               </div>
-              {txForm.type === 'expense' &&
-                txForm.paymentMethod === 'Cartão de Crédito' &&
-                selectedCardInModal &&
-                (() => {
-                  const calc = computeCardInvoiceDueDate(
-                    txForm.purchaseDate || txForm.dueDate,
-                    selectedCardInModal
-                  );
-                  return calc.isAfterClosing ? (
+
+              {/* FORMA DE PAGAMENTO EM PÍLULAS + À VISTA OU PARCELADO */}
+              {txForm.type === 'expense' ? (
+                <>
+                  <div className="form-group" style={{ marginBottom: '10px' }}>
+                    <label htmlFor="tx-method">Forma de Pagamento</label>
                     <div
+                      id="tx-method"
                       style={{
-                        fontSize: '12px',
-                        color: 'var(--primary)',
-                        background: 'var(--primary-soft)',
-                        padding: '6px 10px',
-                        borderRadius: '8px',
-                        marginBottom: '10px',
-                        fontWeight: 600
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(4, 1fr)',
+                        gap: '6px'
                       }}
                     >
-                      <i className="fa-solid fa-calendar-plus"></i> Compra após o fechamento (dia{' '}
-                      {selectedCardInModal.closingDay}) → contabilizada automaticamente na fatura de{' '}
-                      <strong>{getMonthLabel(calc.invoiceYm)}</strong>!
+                      {[
+                        { id: 'Cartão de Crédito', label: '💳 Cartão' },
+                        { id: 'PIX', label: '💠 PIX' },
+                        { id: 'Cartão de Débito', label: '💳 Débito' },
+                        { id: 'Boleto', label: '📄 Boleto' }
+                      ].map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className={`btn btn-sm ${
+                            txForm.paymentMethod === m.id ? 'btn-primary' : 'btn-outline'
+                          }`}
+                          style={{ padding: '7px 6px', fontSize: '12px' }}
+                          onClick={() => {
+                            if (m.id === 'Cartão de Crédito' && state.cards[0]) {
+                              handleSelectCardInTxModal(txForm.cardId || state.cards[0].id);
+                            }
+                            setTxForm((prev) => ({
+                              ...prev,
+                              paymentMethod: m.id,
+                              installmentMode:
+                                m.id === 'Cartão de Crédito' ? prev.installmentMode : 'single'
+                            }));
+                          }}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
                     </div>
-                  ) : null;
-                })()}
+                  </div>
 
-              {/* FORMA DE PAGAMENTO E CARTÃO (SEM BOXES APERTADAS) */}
-              {txForm.type === 'expense' && (
-                <>
-                  <div className="form-grid-2">
-                    <div className="form-group">
-                      <label htmlFor="tx-method">Forma de Pagamento *</label>
-                      <select
-                        id="tx-method"
-                        value={txForm.paymentMethod}
-                        onChange={(e) => {
-                          const method = e.target.value;
-                          if (method === 'Cartão de Crédito' && state.cards[0]) {
-                            handleSelectCardInTxModal(txForm.cardId || state.cards[0].id);
-                          }
-                          setTxForm((prev) => ({
-                            ...prev,
-                            paymentMethod: method
-                          }));
+                  {/* SELETOR À VISTA (1x) vs PARCELADO (2x a 48x) */}
+                  {!txModal.editingId && (
+                    <div
+                      style={{
+                        background: 'var(--bg-subtle)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        padding: '9px 12px',
+                        marginBottom: '10px'
+                      }}
+                    >
+                      <div className="flex-between wrap" style={{ gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${
+                              txForm.installmentMode !== 'installment' ? 'btn-primary' : 'btn-outline'
+                            }`}
+                            style={{ padding: '5px 10px', fontSize: '12px' }}
+                            onClick={() =>
+                              setTxForm((prev) => ({
+                                ...prev,
+                                installmentMode: 'single',
+                                installmentsCount: 1
+                              }))
+                            }
+                          >
+                            À Vista (1x)
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${
+                              txForm.installmentMode === 'installment' ? 'btn-primary' : 'btn-outline'
+                            }`}
+                            style={{ padding: '5px 10px', fontSize: '12px' }}
+                            onClick={() =>
+                              setTxForm((prev) => ({
+                                ...prev,
+                                installmentMode: 'installment',
+                                installmentsCount:
+                                  Number(prev.installmentsCount) > 1 ? prev.installmentsCount : 2
+                              }))
+                            }
+                          >
+                            🔄 Parcelado
+                          </button>
+                        </div>
+
+                        {txForm.installmentMode === 'installment' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <label htmlFor="tx-inst-count" style={{ fontSize: '12px', margin: 0, fontWeight: 600 }}>
+                              Parcelas:
+                            </label>
+                            <select
+                              id="tx-inst-count"
+                              value={txForm.installmentsCount || 2}
+                              onChange={(e) =>
+                                setTxForm((prev) => ({
+                                  ...prev,
+                                  installmentsCount: Number(e.target.value)
+                                }))
+                              }
+                              style={{ padding: '4px 8px', fontSize: '12.5px', width: 'auto' }}
+                            >
+                              {Array.from({ length: 47 }, (_, i) => i + 2).map((n) => (
+                                <option key={n} value={n}>
+                                  {n}x
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      {txForm.installmentMode === 'installment' && Number(txForm.amount) > 0 && (
+                        <div style={{ fontSize: '12px', color: 'var(--primary)', marginTop: '6px', fontWeight: 600 }}>
+                          {(() => {
+                            const sched = generateInstallmentSchedule(
+                              Number(txForm.amount),
+                              txForm.installmentsCount || 2,
+                              txForm.dueDate
+                            );
+                            const lastDue = sched[sched.length - 1]?.dueDate;
+                            return (
+                              <>
+                                <i className="fa-solid fa-calendar-check"></i>{' '}
+                                {sched.length}x de {formatCurrency(sched[0]?.amount)} · Automatizado até{' '}
+                                {getMonthLabel((lastDue || '').slice(0, 7))}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* BLOCO UNIFICADO DO CARTÃO OU PAGAMENTO DIRETO */}
+                  {txForm.paymentMethod === 'Cartão de Crédito' ? (
+                    <div
+                      style={{
+                        background: 'var(--bg-subtle)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '12px',
+                        padding: '10px 12px',
+                        marginBottom: '10px'
+                      }}
+                    >
+                      <div className="form-grid-2" style={{ marginBottom: '8px' }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label htmlFor="tx-card">Qual Cartão? *</label>
+                          <select
+                            id="tx-card"
+                            value={txForm.cardId}
+                            onChange={(e) => handleSelectCardInTxModal(e.target.value)}
+                          >
+                            {state.cards.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} (Fecha dia {c.closingDay})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label htmlFor="tx-purchase-date">Data da Compra *</label>
+                          <input
+                            id="tx-purchase-date"
+                            type="date"
+                            required
+                            value={txForm.purchaseDate || txForm.dueDate}
+                            onChange={(e) => {
+                              const newPurchaseDate = e.target.value;
+                              const chosen =
+                                state.cards.find((c) => c.id === txForm.cardId) || state.cards[0];
+                              const calc = computeCardInvoiceDueDate(newPurchaseDate, chosen);
+                              setTxForm((prev) => ({
+                                ...prev,
+                                purchaseDate: newPurchaseDate,
+                                dueDate: calc.dueDate,
+                                fundedMonth: calc.purchaseYm
+                              }));
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div
+                        className="flex-between wrap"
+                        style={{
+                          paddingTop: '8px',
+                          borderTop: '1px dashed var(--border-color)',
+                          gap: '8px',
+                          fontSize: '12px'
                         }}
                       >
-                        <option value="Cartão de Crédito">💳 Cartão de Crédito</option>
-                        <option value="PIX">💠 PIX / Transferência</option>
-                        <option value="Cartão de Débito">💳 Cartão de Débito</option>
-                        <option value="Boleto">📄 Boleto Bancário</option>
-                      </select>
-                    </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <i
+                            className="fa-solid fa-calendar-day"
+                            style={{ color: selectedCardInModal?.color || 'var(--primary)' }}
+                          ></i>
+                          <span>
+                            Fatura vence em <strong>{formatDateBR(txForm.dueDate)}</strong>
+                            {selectedCardInModal &&
+                              computeCardInvoiceDueDate(
+                                txForm.purchaseDate || txForm.dueDate,
+                                selectedCardInModal
+                              ).isAfterClosing && (
+                                <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
+                                  {' '}(Mês seguinte · após dia {selectedCardInModal.closingDay})
+                                </span>
+                              )}
+                          </span>
+                          <input
+                            id="tx-date"
+                            type="date"
+                            aria-label="Vencimento da Fatura"
+                            value={txForm.dueDate}
+                            onChange={(e) => setTxForm({ ...txForm, dueDate: e.target.value })}
+                            style={{
+                              width: '28px',
+                              height: '24px',
+                              padding: '0 4px',
+                              border: 'none',
+                              background: 'transparent',
+                              cursor: 'pointer'
+                            }}
+                            title="Ajustar data de vencimento manualmente"
+                          />
+                        </div>
 
-                    {txForm.paymentMethod === 'Cartão de Crédito' ? (
-                      <div className="form-group">
-                        <label htmlFor="tx-card">Qual Cartão? *</label>
-                        <select
-                          id="tx-card"
-                          value={txForm.cardId}
-                          onChange={(e) => handleSelectCardInTxModal(e.target.value)}
-                        >
-                          {state.cards.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
+                        <label className="checkbox-inline" htmlFor="tx-cdi-reserve" style={{ margin: 0 }}>
+                          <input
+                            id="tx-cdi-reserve"
+                            type="checkbox"
+                            checked={Boolean(txForm.alreadyFundedInCdi)}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              const pYm = (txForm.purchaseDate || txForm.dueDate || state.selectedMonth).slice(0, 7);
+                              setTxForm((prev) => ({
+                                ...prev,
+                                alreadyFundedInCdi: checked,
+                                fundedMonth: checked ? pYm : ''
+                              }));
+                            }}
+                          />
+                          <span>
+                            <strong>💰 Já guardado no CDI</strong>
+                          </span>
+                        </label>
                       </div>
-                    ) : (
-                      <div className="form-group">
+                    </div>
+                  ) : (
+                    <div className="form-grid-2" style={{ marginBottom: '10px' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label htmlFor="tx-date">Data do Pagamento / Vencimento *</label>
+                        <input
+                          id="tx-date"
+                          type="date"
+                          required
+                          value={txForm.dueDate}
+                          onChange={(e) => setTxForm({ ...txForm, dueDate: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
                         <label htmlFor="tx-paidby-direct">Quem Pagou? *</label>
                         <select
                           id="tx-paidby-direct"
@@ -2371,119 +2613,58 @@ export default function App() {
                           <option value="partner2">{state.couple.partner2Name}</option>
                         </select>
                       </div>
-                    )}
-                  </div>
-
-                  {txForm.paymentMethod === 'Cartão de Crédito' && selectedCardInModal && (
-                    <div className="modal-card-info-badge">
-                      <i
-                        className="fa-solid fa-credit-card"
-                        style={{ color: selectedCardInModal.color, fontSize: '15px' }}
-                      ></i>
-                      <span>
-                        Fatura <strong>{selectedCardInModal.name}</strong> · Fecha dia{' '}
-                        <strong>{selectedCardInModal.closingDay}</strong> · Vence dia{' '}
-                        <strong>{selectedCardInModal.dueDay}</strong> (Titular:{' '}
-                        {selectedCardInModal.owner === 'partner1'
-                          ? state.couple.partner1Name
-                          : state.couple.partner2Name}
-                        )
-                      </span>
                     </div>
                   )}
                 </>
+              ) : (
+                <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <label htmlFor="tx-date">Data do Recebimento *</label>
+                  <input
+                    id="tx-date"
+                    type="date"
+                    required
+                    value={txForm.dueDate}
+                    onChange={(e) => setTxForm({ ...txForm, dueDate: e.target.value })}
+                  />
+                </div>
               )}
 
-                  {txForm.paymentMethod === 'Cartão de Crédito' && (
-                    <div
-                      style={{
-                        background: 'var(--bg-subtle)',
-                        border: '1px dashed var(--border-color)',
-                        borderRadius: '10px',
-                        padding: '10px 12px',
-                        marginBottom: '12px'
-                      }}
-                    >
-                      <label className="checkbox-inline" htmlFor="tx-cdi-reserve">
-                        <input
-                          id="tx-cdi-reserve"
-                          type="checkbox"
-                          checked={Boolean(txForm.alreadyFundedInCdi)}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            const txYm = (txForm.dueDate || state.selectedMonth).slice(0, 7);
-                            setTxForm((prev) => ({
-                              ...prev,
-                              alreadyFundedInCdi: checked,
-                              fundedMonth: checked
-                                ? prev.fundedMonth || shiftYearMonth(txYm, -1)
-                                : ''
-                            }));
-                          }}
-                        />
-                        <span>
-                          <strong>💰 Dinheiro já separado no CDI p/ esta fatura</strong>
-                        </span>
-                      </label>
-                      {txForm.alreadyFundedInCdi && (
-                        <div className="form-group" style={{ marginTop: '8px', marginBottom: 0 }}>
-                          <label htmlFor="tx-funded-month" style={{ fontSize: '12px' }}>
-                            De qual orçamento saiu o dinheiro guardado?
-                          </label>
-                          <select
-                            id="tx-funded-month"
-                            value={
-                              txForm.fundedMonth ||
-                              shiftYearMonth((txForm.dueDate || state.selectedMonth).slice(0, 7), -1)
-                            }
-                            onChange={(e) =>
-                              setTxForm((prev) => ({ ...prev, fundedMonth: e.target.value }))
-                            }
-                          >
-                            {(() => {
-                              const invoiceYm = (txForm.dueDate || state.selectedMonth).slice(0, 7);
-                              const prevYm = shiftYearMonth(invoiceYm, -1);
-                              return (
-                                <>
-                                  <option value={prevYm}>
-                                    Guardado em {getMonthLabel(prevYm)} (Não descontar do salário de {getMonthLabel(invoiceYm)})
-                                  </option>
-                                  <option value="prior-reserve">
-                                    Reserva anterior já existente (Não descontar de nenhum salário mensal)
-                                  </option>
-                                  <option value={invoiceYm}>
-                                    Separado do salário do próprio mês ({getMonthLabel(invoiceYm)})
-                                  </option>
-                                </>
-                              );
-                            })()}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* CATEGORIA E STATUS */}
-              <div className="form-grid-2">
-                <div className="form-group">
+              {/* CATEGORIA, DIVISÃO E SITUAÇÃO EM 1 LINHA LIMPA */}
+              <div className="form-grid-3">
+                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label htmlFor="tx-cat">Categoria</label>
                   <select
                     id="tx-cat"
                     value={txForm.category}
                     onChange={(e) => setTxForm({ ...txForm, category: e.target.value })}
                   >
-                    {(txForm.type === 'income' ? INCOME_CATEGORIES : CATEGORIES).map(
-                      (c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      )
-                    )}
+                    {(txForm.type === 'income' ? INCOME_CATEGORIES : CATEGORIES).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label htmlFor="tx-status">Situação do Pagamento</label>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label htmlFor="tx-owner">
+                    {txForm.type === 'income' ? 'Quem recebeu?' : 'Divisão'}
+                  </label>
+                  <select
+                    id="tx-owner"
+                    value={txForm.owner}
+                    onChange={(e) => setTxForm({ ...txForm, owner: e.target.value })}
+                  >
+                    {txForm.type !== 'income' && (
+                      <option value="joint">🏠 Casal (Conjunto)</option>
+                    )}
+                    <option value="partner1">👤 {state.couple.partner1Name}</option>
+                    <option value="partner2">👤 {state.couple.partner2Name}</option>
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label htmlFor="tx-status">Situação</label>
                   <select
                     id="tx-status"
                     value={txForm.status}
@@ -2493,51 +2674,14 @@ export default function App() {
                       {txForm.type === 'income'
                         ? '⏳ A Receber'
                         : txForm.paymentMethod === 'Cartão de Crédito'
-                          ? '💳 Na Fatura do Mês (A Pagar)'
-                          : '⏳ Pendente (A Pagar)'}
+                        ? '💳 Na Fatura'
+                        : '⏳ Pendente'}
                     </option>
                     <option value="paid">
-                      {txForm.type === 'income' ? '✅ Já Recebido' : '✅ Já Pago / Fatura Quitada'}
+                      {txForm.type === 'income' ? '✅ Recebido' : '✅ Quitado'}
                     </option>
                   </select>
                 </div>
-              </div>
-
-              {/* DIVISÃO DO GASTO / RECEITA */}
-              <div className="form-grid-2">
-                <div
-                  className={`form-group ${txForm.paymentMethod !== 'Cartão de Crédito' || txForm.type === 'income'
-                      ? 'grid-col-full'
-                      : ''
-                    }`}
-                >
-                  <label htmlFor="tx-owner">
-                    {txForm.type === 'income' ? 'Quem recebeu a receita? *' : 'Divisão da Despesa'}
-                  </label>
-                  <select
-                    id="tx-owner"
-                    value={txForm.owner}
-                    onChange={(e) => setTxForm({ ...txForm, owner: e.target.value })}
-                  >
-                    <option value="joint">🏠 Conjunto da Casa (Casal)</option>
-                    <option value="partner1">👤 Individual — {state.couple.partner1Name}</option>
-                    <option value="partner2">👤 Individual — {state.couple.partner2Name}</option>
-                  </select>
-                </div>
-
-                {txForm.type !== 'income' && txForm.paymentMethod === 'Cartão de Crédito' && (
-                  <div className="form-group">
-                    <label htmlFor="tx-paidby">Titular que Paga a Fatura</label>
-                    <select
-                      id="tx-paidby"
-                      value={txForm.paidBy}
-                      onChange={(e) => setTxForm({ ...txForm, paidBy: e.target.value })}
-                    >
-                      <option value="partner1">{state.couple.partner1Name}</option>
-                      <option value="partner2">{state.couple.partner2Name}</option>
-                    </select>
-                  </div>
-                )}
               </div>
 
               {txModal.editingId && txModal.commitmentId && (
@@ -2625,13 +2769,10 @@ export default function App() {
                   <label htmlFor="m-p1-inc">
                     Salário de {state.couple.partner1Name} (R$) *
                   </label>
-                  <input
+                  <CurrencyInput
                     id="m-p1-inc"
-                    type="number"
-                    step="0.01"
-                    min="0"
                     required
-                    placeholder="Ex: 6500.00"
+                    placeholder="6.500,00"
                     value={monthIncomeForm.partner1Income}
                     onChange={(e) =>
                       setMonthIncomeForm({
@@ -2645,13 +2786,10 @@ export default function App() {
                   <label htmlFor="m-p2-inc">
                     Salário de {state.couple.partner2Name} (R$) *
                   </label>
-                  <input
+                  <CurrencyInput
                     id="m-p2-inc"
-                    type="number"
-                    step="0.01"
-                    min="0"
                     required
-                    placeholder="Ex: 5500.00"
+                    placeholder="5.500,00"
                     value={monthIncomeForm.partner2Income}
                     onChange={(e) =>
                       setMonthIncomeForm({
@@ -2667,12 +2805,9 @@ export default function App() {
                 <label htmlFor="m-don-inc">
                   Doações Esporádicas / Especiais deste Mês (R$)
                 </label>
-                <input
+                <CurrencyInput
                   id="m-don-inc"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="Ex: 0.00 (ajuda de custo ou caridade fora dízimo e oferta)"
+                  placeholder="0,00"
                   value={monthIncomeForm.donationAmount}
                   onChange={(e) =>
                     setMonthIncomeForm({

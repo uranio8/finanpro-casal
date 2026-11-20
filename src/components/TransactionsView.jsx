@@ -15,9 +15,11 @@ export default function TransactionsView({
   onClonePreviousMonthFixedExpenses,
   onImportStatementTransactions,
   onToggleTransactionStatus,
+  onToggleTransactionCdiReserve,
   onDeleteTransaction
 }) {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [calendarCollapsed, setCalendarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'pending' | 'paid' | 'income'
   const [selectedDay, setSelectedDay] = useState(null); // e.g., '2026-11-15'
   const [search, setSearch] = useState('');
@@ -207,18 +209,30 @@ export default function TransactionsView({
               Já Quitado: <strong className="text-emerald">{formatCurrency(totalMonthPaid)}</strong>
             </p>
           </div>
-          {selectedDay && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {selectedDay && (
+              <button
+                className="btn btn-sm btn-soft"
+                onClick={() => setSelectedDay(null)}
+              >
+                <i className="fa-solid fa-filter-circle-xmark"></i> Mostrando dia{' '}
+                {formatDateBR(selectedDay)} — Limpar Filtro
+              </button>
+            )}
             <button
-              className="btn btn-sm btn-soft"
-              onClick={() => setSelectedDay(null)}
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={() => setCalendarCollapsed((prev) => !prev)}
             >
-              <i className="fa-solid fa-filter-circle-xmark"></i> Mostrando dia{' '}
-              {formatDateBR(selectedDay)} — Limpar Filtro
+              <i className={`fa-solid ${calendarCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'}`}></i>{' '}
+              {calendarCollapsed ? 'Mostrar Calendário' : 'Recolher Calendário'}
             </button>
-          )}
+          </div>
         </div>
 
-        <div className="calendar-weekdays">
+        {!calendarCollapsed && (
+          <>
+            <div className="calendar-weekdays">
           {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d) => (
             <div key={d} className="cal-weekday">
               {d}
@@ -276,6 +290,8 @@ export default function TransactionsView({
             );
           })}
         </div>
+          </>
+        )}
       </div>
 
       {/* ABAS & FILTROS DA TABELA */}
@@ -425,6 +441,26 @@ export default function TransactionsView({
                         </span>
                       ) : (
                         <span className="method-pill">{tx.paymentMethod || 'PIX'}</span>
+                      )}
+                      {tx.type === 'expense' && tx.paymentMethod === 'Cartão de Crédito' && onToggleTransactionCdiReserve && (
+                        <button
+                          type="button"
+                          onClick={() => onToggleTransactionCdiReserve(tx.id)}
+                          title="Clique para marcar/desmarcar que o dinheiro desta compra já está separado no CDI"
+                          style={{
+                            marginLeft: '6px',
+                            padding: '2px 7px',
+                            fontSize: '10.5px',
+                            borderRadius: '999px',
+                            border: tx.alreadyFundedInCdi ? '1px solid #10b981' : '1px dashed var(--border-color)',
+                            background: tx.alreadyFundedInCdi ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                            color: tx.alreadyFundedInCdi ? '#059669' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          💰 {tx.alreadyFundedInCdi ? 'CDI' : '+CDI'}
+                        </button>
                       )}
                     </td>
                     <td className="text-center">
