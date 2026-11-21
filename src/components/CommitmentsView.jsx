@@ -466,14 +466,30 @@ export default function CommitmentsView({
   };
 
   const openEditCommitmentModal = (comm) => {
+    const paidRegular = (comm.linked || []).filter(
+      (t) => t.status === 'paid' && t.installmentNumber > 0
+    );
     const pendingRegular = (comm.linked || []).filter(
       (t) => t.status === 'pending' && t.installmentNumber > 0
     );
     const sampleAmount =
-      pendingRegular.length > 0 ? pendingRegular[0].amount : '';
+      pendingRegular.length > 0
+        ? pendingRegular[0].amount
+        : comm.monthlyAmount || comm.totalAmount || '';
+    const firstPendingDate =
+      pendingRegular[0]?.dueDate ||
+      (paidRegular.length > 0
+        ? addMonthsToDate(paidRegular[paidRegular.length - 1].dueDate, 1)
+        : comm.startDate || buildSafeDueDate(state.selectedMonth, defaultCard.dueDay || 15));
+
     setEditingComm({
       id: comm.id,
       title: comm.title || '',
+      type: comm.type || 'installment',
+      installmentsCount: comm.isIndefinite
+        ? 'indefinite'
+        : comm.totalInstallmentsCount || comm.installmentsCount || 1,
+      firstPendingDate,
       category: comm.category || 'eletro',
       owner: comm.owner || 'joint',
       paidBy: comm.paidBy || 'partner1',
@@ -481,6 +497,7 @@ export default function CommitmentsView({
       cardId: comm.cardId || defaultCard.id,
       notes: comm.notes || '',
       pendingInstallmentAmount: sampleAmount,
+      paidCount: paidRegular.length,
       pendingCount: pendingRegular.length
     });
   };
@@ -1413,7 +1430,11 @@ export default function CommitmentsView({
       {/* MODAL: EDITAR PARCELAMENTO / CONTA FIXA EXISTENTE */}
       {editingComm && (
         <div className="modal-backdrop" onClick={() => setEditingComm(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-box lg"
+            style={{ maxWidth: '720px', width: '94%' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3>
                 <i className="fa-solid fa-pen-to-square text-emerald"></i> Editar Contrato /
@@ -1433,6 +1454,56 @@ export default function CommitmentsView({
                   value={editingComm.title}
                   onChange={(e) => setEditingComm({ ...editingComm, title: e.target.value })}
                 />
+              </div>
+
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label htmlFor="edit-comm-type">Tipo de Compromisso *</label>
+                  <select
+                    id="edit-comm-type"
+                    value={editingComm.type || 'installment'}
+                    onChange={(e) => {
+                      const nextType = e.target.value;
+                      setEditingComm({
+                        ...editingComm,
+                        type: nextType,
+                        installmentsCount:
+                          nextType === 'installment' && editingComm.installmentsCount === 'indefinite'
+                            ? Math.max(1, (editingComm.paidCount || 0) + (editingComm.pendingCount || 6))
+                            : editingComm.installmentsCount
+                      });
+                    }}
+                  >
+                    <option value="installment">💳 Compra Parcelada</option>
+                    <option value="recurring">🔄 Conta Fixa Recorrente / Assinatura</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="edit-comm-count">Duração / Quantidade de Meses *</label>
+                  <select
+                    id="edit-comm-count"
+                    value={editingComm.installmentsCount}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditingComm({
+                        ...editingComm,
+                        type: val === 'indefinite' ? 'recurring' : editingComm.type,
+                        installmentsCount: val === 'indefinite' ? 'indefinite' : Number(val)
+                      });
+                    }}
+                  >
+                    <option value="indefinite">♾️ Contínua (Sem data para finalizar)</option>
+                    {Array.from({ length: 48 }, (_, i) => i + 1)
+                      .filter((n) => n >= Math.max(1, editingComm.paidCount || 0))
+                      .map((n) => (
+                        <option key={n} value={n}>
+                          {n}x {n === 1 ? 'mês (À Vista)' : 'meses / parcelas'}
+                          {editingComm.paidCount > 0 ? ` (${editingComm.paidCount} já paga(s))` : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
               </div>
 
               <div className="form-grid-2">
@@ -1490,10 +1561,14 @@ export default function CommitmentsView({
                       value={editingComm.cardId}
                       onChange={(e) => {
                         const chosen = cards.find((c) => c.id === e.target.value);
+                        const ym = (editingComm.firstPendingDate || state.selectedMonth).slice(0, 7);
                         setEditingComm({
                           ...editingComm,
                           cardId: e.target.value,
-                          paidBy: chosen?.owner === 'partner2' ? 'partner2' : 'partner1'
+                          paidBy: chosen?.owner === 'partner2' ? 'partner2' : 'partner1',
+                          firstPendingDate: chosen
+                            ? buildSafeDueDate(ym, chosen.dueDay || 15)
+                            : editingComm.firstPendingDate
                         });
                       }}
                     >
@@ -1519,10 +1594,12 @@ export default function CommitmentsView({
                 )}
               </div>
 
-              {editingComm.pendingCount > 0 && (
+              <div className="form-grid-2">
                 <div className="form-group">
                   <label htmlFor="edit-comm-pending-val">
-                    Valor das {editingComm.pendingCount} Parcelas Pendentes Futuras (R$)
+                    {editingComm.installmentsCount === 'indefinite'
+                      ? 'Valor Mensal Recorrente (R$) *'
+                      : 'Valor Mensal das Parcelas Pendentes (R$) *'}
                   </label>
                   <CurrencyInput
                     id="edit-comm-pending-val"
@@ -1534,11 +1611,29 @@ export default function CommitmentsView({
                       })
                     }
                   />
-                  <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                    As parcelas já pagas permanecem intactas; apenas as pendentes serão reajustadas.
-                  </small>
                 </div>
-              )}
+
+                <div className="form-group">
+                  <label htmlFor="edit-comm-start">
+                    1º Vencimento Pendente (Mês e Dia) *
+                  </label>
+                  <input
+                    id="edit-comm-start"
+                    type="date"
+                    required
+                    value={editingComm.firstPendingDate || `${state.selectedMonth}-15`}
+                    onChange={(e) =>
+                      setEditingComm({
+                        ...editingComm,
+                        firstPendingDate: e.target.value
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              <small style={{ color: 'var(--text-muted)', fontSize: '11.5px', display: 'block', marginTop: '-4px', marginBottom: '10px' }}>
+                As parcelas já pagas ({editingComm.paidCount || 0}) permanecem intactas; as parcelas pendentes serão recalculadas a partir da data e duração escolhidas acima.
+              </small>
 
               <div className="form-group">
                 <label htmlFor="edit-comm-notes">Observações</label>

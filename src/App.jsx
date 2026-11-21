@@ -5,6 +5,7 @@ import {
   formatDateBR,
   getMonthLabel,
   shiftYearMonth,
+  addMonthsToDate,
   getEffectiveMonthIncome,
   buildSafeDueDate,
   computeCardInvoiceDueDate,
@@ -1334,81 +1335,145 @@ export default function App() {
     showToast('Parcelamento e parcelas vinculadas excluídos.');
   };
 
-  // Edição completa de Parcelamento / Conta Fixa existente
+  // Edição completa de Parcelamento / Conta Fixa existente (incluindo quantidade de meses, modo contínuo e datas)
   const handleUpdateCommitment = (commId, updates) => {
     setState((prev) => {
+      const existingComm = prev.commitments.find((c) => c.id === commId);
       const targetCard =
         updates.paymentMethod === 'Cartão de Crédito'
           ? prev.cards.find((c) => c.id === updates.cardId)
           : null;
       const effectiveCardId =
         updates.paymentMethod === 'Cartão de Crédito' ? updates.cardId || '' : '';
-      const newPendingInstallmentAmount =
-        updates.pendingInstallmentAmount !== undefined &&
-          Number(updates.pendingInstallmentAmount) > 0
-          ? Number(updates.pendingInstallmentAmount)
-          : null;
 
-      const updatedTransactions = prev.transactions.map((t) => {
-        if (t.commitmentId !== commId) return t;
-        const isDownPayment = t.installmentNumber === 0;
-        const isPending = t.status === 'pending';
-        const ym = t.dueDate ? t.dueDate.slice(0, 7) : prev.selectedMonth;
-        const nextDueDate =
-          isPending && !isDownPayment && targetCard
-            ? buildSafeDueDate(ym, targetCard.dueDay || 15)
-            : t.dueDate;
+      const isIndefinite = updates.installmentsCount === 'indefinite';
+      const effectiveType = isIndefinite ? 'recurring' : updates.type || existingComm?.type || 'installment';
 
-        return {
+      const otherTransactions = prev.transactions.filter((t) => t.commitmentId !== commId);
+      const commTransactions = prev.transactions
+        .filter((t) => t.commitmentId === commId)
+        .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+
+      const preservedTxs = commTransactions
+        .filter((t) => t.installmentNumber === 0 || t.status === 'paid')
+        .map((t) => ({
           ...t,
-          title: isDownPayment ? `${updates.title} (Entrada)` : updates.title,
+          title: t.installmentNumber === 0 ? `${updates.title} (Entrada)` : updates.title,
           category: updates.category,
+          owner: updates.owner
+        }));
+
+      const paidRegularCount = preservedTxs.filter((t) => t.installmentNumber > 0).length;
+      const existingPendingTxs = commTransactions.filter(
+        (t) => t.installmentNumber !== 0 && t.status === 'pending'
+      );
+
+      const fallbackAmount =
+        existingPendingTxs[0]?.amount ||
+        existingComm?.monthlyAmount ||
+        existingComm?.totalAmount ||
+        0;
+      const monthlyVal =
+        updates.pendingInstallmentAmount !== undefined &&
+        Number(updates.pendingInstallmentAmount) > 0
+          ? Number(updates.pendingInstallmentAmount)
+          : Number(fallbackAmount);
+
+      const targetTotalCount = isIndefinite
+        ? paidRegularCount + Math.max(existingPendingTxs.length, 12)
+        : Math.max(
+            paidRegularCount,
+            parseInt(updates.installmentsCount, 10) ||
+              paidRegularCount + existingPendingTxs.length ||
+              1
+          );
+      const pendingToGenerate = Math.max(0, targetTotalCount - paidRegularCount);
+
+      const baseFirstPendingDate =
+        updates.firstPendingDate ||
+        existingPendingTxs[0]?.dueDate ||
+        existingComm?.startDate ||
+        buildSafeDueDate(prev.selectedMonth, targetCard?.dueDay || 15);
+
+      const nowIso = new Date().toISOString();
+      const rebuiltPendingTxs = Array.from({ length: pendingToGenerate }, (_, idx) => {
+        const instNum = paidRegularCount + idx + 1;
+        const prevPending = existingPendingTxs[idx];
+        const dueDate = addMonthsToDate(baseFirstPendingDate, idx);
+        return {
+          id: prevPending?.id || `tx-${commId}-${instNum}-${Date.now()}`,
+          commitmentId: commId,
+          title: updates.title,
+          type: 'expense',
+          category: updates.category,
+          amount: monthlyVal,
+          dueDate,
+          paidDate: '',
+          status: 'pending',
           owner: updates.owner,
-          paidBy: isPending ? updates.paidBy : t.paidBy,
-          paymentMethod: isDownPayment ? t.paymentMethod : (isPending ? updates.paymentMethod : t.paymentMethod),
-          cardId: isDownPayment ? '' : (isPending ? effectiveCardId : (t.cardId || effectiveCardId)),
-          dueDate: nextDueDate,
-          amount:
-            isPending && !isDownPayment && newPendingInstallmentAmount !== null
-              ? newPendingInstallmentAmount
-              : t.amount
+          paidBy: updates.paidBy,
+          paymentMethod: updates.paymentMethod,
+          cardId: effectiveCardId,
+          installmentNumber: instNum,
+          totalInstallments: isIndefinite ? undefined : targetTotalCount,
+          isIndefiniteRecurrence: isIndefinite,
+          alreadyFundedInCdi: Boolean(prevPending?.alreadyFundedInCdi),
+          fundedMonth: prevPending?.fundedMonth || '',
+          updatedAt: nowIso
         };
       });
 
-      const linkedAfter = updatedTransactions
-        .filter((t) => t.commitmentId === commId)
-        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      const allCommTxs = [...preservedTxs.map((t) =>
+        t.installmentNumber > 0
+          ? { ...t, totalInstallments: isIndefinite ? undefined : targetTotalCount }
+          : t
+      ), ...rebuiltPendingTxs];
+
       const newTotalAmount = Number(
-        linkedAfter.reduce((acc, t) => acc + Number(t.amount || 0), 0).toFixed(2)
+        allCommTxs.reduce((acc, t) => acc + Number(t.amount || 0), 0).toFixed(2)
       );
-      const newEndDate =
-        linkedAfter.length > 0 ? linkedAfter[linkedAfter.length - 1].dueDate : undefined;
+      const newEndDate = isIndefinite
+        ? null
+        : allCommTxs.length > 0
+        ? allCommTxs[allCommTxs.length - 1].dueDate
+        : undefined;
+      const dueDay = Number((baseFirstPendingDate || '').split('-')[2]) || targetCard?.dueDay || 15;
 
       const updatedCommitments = prev.commitments.map((c) =>
         c.id === commId
           ? {
-            ...c,
-            title: updates.title,
-            category: updates.category,
-            owner: updates.owner,
-            paidBy: updates.paidBy,
-            paymentMethod: updates.paymentMethod,
-            cardId: effectiveCardId,
-            notes: updates.notes ?? c.notes,
-            totalAmount: newTotalAmount,
-            endDate: newEndDate || c.endDate
-          }
+              ...c,
+              title: updates.title,
+              type: effectiveType,
+              isIndefinite,
+              active: true,
+              installmentsCount: isIndefinite ? 12 : targetTotalCount,
+              monthlyAmount: monthlyVal,
+              dueDay,
+              category: updates.category,
+              owner: updates.owner,
+              paidBy: updates.paidBy,
+              paymentMethod: updates.paymentMethod,
+              cardId: effectiveCardId,
+              notes: updates.notes ?? c.notes,
+              totalAmount: isIndefinite ? monthlyVal : newTotalAmount,
+              endDate: newEndDate
+            }
           : c
       );
 
-      return {
+      const nextState = {
         ...prev,
         commitments: updatedCommitments,
-        transactions: updatedTransactions
+        transactions: [...otherTransactions, ...allCommTxs]
+      };
+      return {
+        ...nextState,
+        transactions: syncMonthIncomeAndTitheTransactions(nextState, prev.selectedMonth)
       };
     });
 
-    showToast(`Contrato "${updates.title}" e parcelas pendentes atualizados! ✏️`);
+    showToast(`Contrato "${updates.title}" atualizado com sucesso! ✏️`);
   };
 
   // Antecipação de Parcelas com Desconto (Estilo Nubank / Inter)
